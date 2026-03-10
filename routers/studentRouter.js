@@ -31,7 +31,7 @@ router.route('/promoteStudents').patch([authenticateUser, admin], promoteStudent
 router.route('/promoteOneStudent').patch([authenticateUser, admin], promoteOneStudent)
 router.route('/demoteStudent').patch([authenticateUser, admin], demoteStudent)
 router.route('/deleteStudent').delete([authenticateUser, admin], deleteStudent)
-router.route('/changeClass/:proposedclass').patch([authenticateUser, superAdmin], changeStudentsClass)
+router.route('/changeClass/:proposedclass').patch([authenticateUser, admin], changeStudentsClass)
 
 
 module.exports = router;
