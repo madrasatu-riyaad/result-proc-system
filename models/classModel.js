@@ -2,23 +2,28 @@ const mongoose = require('mongoose')
 
 
 const classSchema = new mongoose.Schema({
-    className:{
+    className: {
         type: String,
-        trim:true,
-        },
+        trim: true,
+    },
     programme: {
         type: String,
-        trim:true,
+        trim: true,
     },
     subjects: [],
-    noInClass:{
-        type: Number,
-        maxlength:[3, 'please check the number you entered']
+    termlyDetails: [{
+        sessionName: String,
+        termName: String,
+        noInClass: {
+            type: Number,
+            maxlength: [3, 'please check the number you entered']
         },
-    teacherSignature:{
-        type: String,
-        trim:true,
-    }
-    })
+        classTeacherId: {
+            type: mongoose.Types.ObjectId,
+            ref: "Staff",
+        },
+    }],
 
-    module.exports = mongoose.model('Class', classSchema)
+})
+
+module.exports = mongoose.model('Class', classSchema)

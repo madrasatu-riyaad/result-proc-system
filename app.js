@@ -69,6 +69,3 @@ async function start(){
 }
 start()
 
-// app.listen(port, ()=>{
-//    startupDebugger('server listening on port ' + port);
-// })

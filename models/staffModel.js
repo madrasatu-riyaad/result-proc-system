@@ -64,6 +64,14 @@ const staffSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    isActive: {
+      type: Boolean,
+      default: true
+    },
+    signatureUrl: {
+      type: String,
+      trim: true,
+    },
     assignedClasses: [{
       class: String,
       programme: String

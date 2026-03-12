@@ -295,13 +295,13 @@ const deleteStaff = async (req, res, next) => {
   if (error) throw error;
 
   let { email } = req.body;
-  const staff = await Staff.findOneAndDelete({ email });
+  const staff = await Staff.findOneAndUpdate({ isActive: false }, { new: true });
   if (!staff) throw new NotFoundError("Error: no such staff found");
 
   const user = await User.findOneAndDelete({ email });
   if (!user) throw new NotFoundError("Error: This user is not yet registered, but has been removed as a staffer");
 
-  res.status(200).json({ status: "success", message: "Staff has been deleted" });
+  res.status(200).json({ status: "success", message: "Staff has been archived and details removed from user database" });
 };
 
 // set report card details for a programme

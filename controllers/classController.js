@@ -4,83 +4,83 @@ const Staff = require("../models/staffModel");
 const { BadUserRequestError, NotFoundError, UnAuthorizedError } =
   require('../middleware/errors')
 
+const supabase = require('../utils/supabaseClient')
 
 const multer = require("multer"); // multer will be used to handle the form data.
-const aws = require("aws-sdk");
-const multerS3 = require("multer-s3");
-// const _ = require("lodash");
-const {
-  S3Client,
-  HeadObjectCommand,
-  DeleteObjectCommand,
-  PutObjectCommand,
-} = require("aws-sdk");
-// user-defined modules
+const multerStorage = multer.memoryStorage()
 
-// const s3Client = new S3Client({
-//   region: process.env.S3_BUCKET_REGION,
-//   credentials: {
-//     accessKeyId: process.env.S3_ACCESS_KEY,
-//     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-//   },
-// });
 
-const s3 = new aws.S3({
-  accessKeyId: process.env.S3_ACCESS_KEY,
-  region: process.env.S3_BUCKET_REGION,
-  secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-});
-
-const upload = (str1, str2) =>
+const upload = () =>
   multer({
-    storage: multerS3({
-      s3,
-      bucket: process.env.S3_BUCKET_NAME,
-      // acl: 'public-read',
-      metadata: function (req, file, cb) {
-        cb(null, { fieldName: file.fieldname });
-      },
-      key: function (req, file, cb) {
-        // const fileName = "img" + Date.now() + "_" + file.originalname;
-        const fileNameOriginal = file.originalname.split(".");
-        let fileExtension = fileNameOriginal.pop()
-        let fileName = "img_" + str1 + "_" + str2 + "." + fileExtension;
-        cb(null, fileName);
-      },
-    }),
+    storage: multerStorage,
     fileFilter: (req, file, cb) => {
-      if (
-        file.mimetype == "image/png"
-      ) {
-        cb(null, true);
-      } else return cb(new BadUserRequestError("Invalid file type! Only png files are accepted. Make sure your signature has a transparent background"));
+      if (file.mimetype === "image/png") {
+        cb(null, true)
+      } else {
+        cb(new Error("Invalid file type! Only PNG files are accepted. Make sure your signature has a transparent background"))
+      }
     },
-    limits: { fileSize: 1024 * 1024 }
-  });
+    limits: { fileSize: 1024 * 1024 } // 1MB
+  })
+
 
 const uploadImg = async (req, res, next) => {
-  const classteacher = await Staff.findOne({ email: req.user.email })
-  const teacher_class = classteacher.teacherClass
-  const teacher_programme = classteacher.teacherProgramme
-  const uploadSingle = upload(teacher_class, teacher_programme).single("signatureImage");
-  uploadSingle(req, res, async (err) => {
-    if (err instanceof multer.MulterError) {
-      return res.status(404).end("file exceeds accepted standard! Not more than 1MB");
-    } else if (err) {
-      return res.status(404).end(err.message);
-    } else if (!req.file) {
-      return res.status(404).end("File is required!");
-    }
-    // if image uploads successfully, get url of image and pass to the next middleware
-    req.signature_url = req.file.location;
-    next();
-  });
-};
+  try {
+    const classteacher = await Staff.findOne({ email: req.user.email })
+    const teacherId = classteacher._id.toString() // use MongoDB _id as identifier
+
+    // Use Multer to parse the file
+    const uploadSingle = upload().single("signatureImage")
+    uploadSingle(req, res, async (err) => {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).end("File exceeds accepted standard! Not more than 1MB")
+      } else if (err) {
+        return res.status(400).end(err.message)
+      } else if (!req.file) {
+        return res.status(400).end("File is required!")
+      }
+
+      // 1️⃣ Upload to Supabase
+      const fileName = `teacher_${teacherId}.png`
+      const { data, error } = await supabase
+        .storage
+        .from('staffsignatures')
+        .upload(fileName, req.file.buffer, { upsert: true, contentType: 'image/png' })
+
+      if (error) {
+        console.error('Supabase upload error:', error)
+        return res.status(500).end("Failed to upload signature")
+      }
+
+      // 2️⃣ Get public URL
+      const { data: urlData } = supabase
+        .storage
+        .from('staffsignatures')
+        .getPublicUrl(fileName)
+      const publicUrl = urlData.publicUrl
+
+      // 3️⃣ Update MongoDB
+      await Staff.updateOne(
+        { _id: classteacher._id },
+        { $set: { signatureUrl: publicUrl } }
+      )
+
+      // 4️⃣ Pass URL to next middleware
+      req.signature_url = publicUrl
+      req.teacherId = classteacher._id
+      next()
+    })
+  } catch (err) {
+    console.error(err)
+    return res.status(500).end("Server error")
+  }
+}
 
 const uploadPrplSignature = async (req, res, next) => {
   const principal = await Staff.findOne({ email: req.user.email })
   const prcpl_programme = principal.teacherProgramme
-  const uploadSingle = upload(prcpl_programme, "principal").single("signatureImage");
+
+  const uploadSingle = upload().single("signatureImage");
   uploadSingle(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       return res.status(404).end("file exceeds accepted standard! Not more than 1MB");
@@ -89,14 +89,39 @@ const uploadPrplSignature = async (req, res, next) => {
     } else if (!req.file) {
       return res.status(404).end("File is required!");
     }
-    // if image uploads successfully, get url of image and pass to the next middleware
-    req.signature_url = req.file.location;
+
+    // 1️⃣ Upload to Supabase
+    const fileName = `principal_${prcpl_programme}.png`
+    const { data, error } = await supabase
+      .storage
+      .from('staffsignatures')
+      .upload(fileName, req.file.buffer, { upsert: true, contentType: 'image/png' })
+
+    if (error) {
+      console.error('Supabase upload error:', error)
+      return res.status(500).end("Failed to upload signature")
+    }
+
+    // 2️⃣ Get public URL
+    const { data: urlData } = supabase
+      .storage
+      .from('staffsignatures')
+      .getPublicUrl(fileName)
+    const publicUrl = urlData.publicUrl
+
+    // 3️⃣ Update MongoDB
+    await Staff.updateOne(
+      { _id: principal._id },
+      { $set: { signatureUrl: publicUrl } }
+    )
+    // get url of image and pass to the next middleware
+    req.signature_url = publicUrl;
     next();
   });
 };
 
 const uploadPropSignature = async (req, res, next) => {
-  const uploadSingle = upload("madrasah", "proprietor").single("signatureImage");
+  const uploadSingle = upload().single("signatureImage");
   uploadSingle(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       return res.status(404).end("file exceeds accepted standard! Not more than 1MB");
@@ -105,15 +130,35 @@ const uploadPropSignature = async (req, res, next) => {
     } else if (!req.file) {
       return res.status(404).end("File is required!");
     }
-    // if image uploads successfully, get url of image and pass to the next middleware
-    req.signature_url = req.file.location;
+
+    // 1️⃣ Upload to Supabase
+    const fileName = `proprietor_signature.png`
+    const { data, error } = await supabase
+      .storage
+      .from('staffsignatures')
+      .upload(fileName, req.file.buffer, { upsert: true, contentType: 'image/png' })
+
+    if (error) {
+      console.error('Supabase upload error:', error)
+      return res.status(500).end("Failed to upload signature")
+    }
+
+    // 2️⃣ Get public URL
+    const { data: urlData } = supabase
+      .storage
+      .from('staffsignatures')
+      .getPublicUrl(fileName)
+    const publicUrl = urlData.publicUrl
+
+    // get url of image and pass to the next middleware
+    req.signature_url = publicUrl;
     next();
   });
 };
 
 // add details for a class
 const addDetails = async (req, res, next) => {
-  const { noInClass } = req.body;
+  const { noInClass, termName, sessionName } = req.body;
   const { className, programme } = req.query;
   const classExists = await sClass.findOne({
     $and:
@@ -123,9 +168,13 @@ const addDetails = async (req, res, next) => {
       ]
   })
   if (!classExists) throw new NotFoundError("Error: the requested class does not exist");
-  classExists.noInClass = noInClass
-  classExists.teacherSignature = req.signature_url, //coming from the uploadImg middleware
-    classExists.save()
+  classExists.termlyDetails.push({
+    sessionName,
+    termName,
+    noInClass,
+    classTeacherId: req.teacherId  //coming from the uploadImg middleware
+  })
+  classExists.save()
 
   res.status(200).json({
     status: "Success",
@@ -194,7 +243,7 @@ const addClassSubject = async (req, res, next) => {
         { programme }
       ]
   })
-  
+
   if (!classExists) throw new NotFoundError("Error: the requested class does not exist");
   for (let count = 0; count < classExists.subjects.length; count++) {
     if (classExists.subjects[count] == subject)
@@ -239,8 +288,8 @@ const addClass = async (req, res, next) => {
       ]
   })
   if (classExists) throw new BadUserRequestError("Error: this class already exists");
-  const classAdded = await sClass.create({...req.body})
-  
+  const classAdded = await sClass.create({ ...req.body })
+
   res.status(201).json({ status: "success", message: `${className} successfully added for ${programme}`, classAdded });
 }
 
@@ -256,13 +305,13 @@ const removeClass = async (req, res, next) => {
   })
   if (!classExists) throw new NotFoundError("Error: no such class found");
   const classRemoved = await sClass.findOneAndDelete({
-      $and:
+    $and:
       [
         { className },
         { programme }
       ]
   })
-  
+
   res.status(201).json({ status: "success", message: `${className} for ${programme} successfully removed`, classRemoved });
 }
 
