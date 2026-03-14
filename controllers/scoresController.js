@@ -4,7 +4,7 @@ const Staff = require("../models/staffModel");
 const Score = require("../models/scoreModel");
 const sClass = require("../models/classModel");
 const CardDetails = require("../models/carddetailsModel");
-const Attendance = require("../models/attendanceModel");
+const Attendance = require("../models/newAttendanceModel");
 const { BadUserRequestError, NotFoundError, UnAuthorizedError } =
   require('../middleware/errors')
 
@@ -279,7 +279,7 @@ const getScores = async (req, res, next) => {
   if (!alreadyHasScores) throw new NotFoundError("Error: no scores registered for this student");
   else {
 
-    // if yes, return all registered scores and attendance for the student in the session and year queried
+    // if yes, return all registered scores for the student in the session and year queried
     let result = alreadyHasScores.scores
     for (let count = 0; count < result.length; count++) {
       if (sessionName == result[count].sessionName) {
@@ -295,60 +295,60 @@ const getScores = async (req, res, next) => {
         noInClass = termInfo?.noInClass;
         let classTeacherID = termInfo?.classTeacherId;
         if (classTeacherID) {
-        let teacherSignatureURL = await Staff.findOne({ _id: classTeacherID })
-        teacherSignature = teacherSignatureURL?.signatureUrl;
+          let teacherSignatureURL = await Staff.findOne({ _id: classTeacherID })
+          teacherSignature = teacherSignatureURL?.signatureUrl;
         }
-    //check for term scores
-    for (let termcount = 0; termcount < result[count].term.length; termcount++) {
-      if (termName == result[count].term[termcount].termName) {
-        let firstTermScore = []
-        let secondTermScore = []
-        let comment = result[count].term[termcount].comment
-        let ameedComment = result[count].term[termcount].ameedComment
-        let grandTotal = result[count].term[termcount].grandTotal
-        let marksObtained = result[count].term[termcount].marksObtained
-        let avgPercentage = result[count].term[termcount].avgPercentage
-        let stdPosition = result[count].term[termcount].position
-        let timesPresent = result[count].term[termcount].attendancePresent
-        let timesAbsent = result[count].term[termcount].attendanceAbsent
-        let report = result[count].term[termcount].subjects
+        //check for term scores
+        for (let termcount = 0; termcount < result[count].term.length; termcount++) {
+          if (termName == result[count].term[termcount].termName) {
+            let firstTermScore = []
+            let secondTermScore = []
+            let comment = result[count].term[termcount].comment
+            let ameedComment = result[count].term[termcount].ameedComment
+            let grandTotal = result[count].term[termcount].grandTotal
+            let marksObtained = result[count].term[termcount].marksObtained
+            let avgPercentage = result[count].term[termcount].avgPercentage
+            let stdPosition = result[count].term[termcount].position
+            let timesPresent = result[count].term[termcount].attendancePresent
+            let timesAbsent = result[count].term[termcount].attendanceAbsent
+            let report = result[count].term[termcount].subjects
 
-        if (termName == 'third') {
-          const firstTerm = result[count].term.find(aterm => aterm.termName == "first")
-          const secondTerm = result[count].term.find(aterm => aterm.termName == "second")
-          for (let subjectcount = 0; subjectcount < result[count].term[termcount].subjects.length; subjectcount++) {
+            if (termName == 'third') {
+              const firstTerm = result[count].term.find(aterm => aterm.termName == "first")
+              const secondTerm = result[count].term.find(aterm => aterm.termName == "second")
+              for (let subjectcount = 0; subjectcount < result[count].term[termcount].subjects.length; subjectcount++) {
 
-            if (firstTerm != undefined) {
-              let matchSubject1st = firstTerm.subjects.find(asubject => asubject.subjectName == result[count].term[termcount].subjects[subjectcount].subjectName)
-              if (!matchSubject1st) { }
-              else firstTermScore[subjectcount] = matchSubject1st.totalScore
+                if (firstTerm != undefined) {
+                  let matchSubject1st = firstTerm.subjects.find(asubject => asubject.subjectName == result[count].term[termcount].subjects[subjectcount].subjectName)
+                  if (!matchSubject1st) { }
+                  else firstTermScore[subjectcount] = matchSubject1st.totalScore
+                }
+                else firstTermScore[subjectcount] = 0;
+
+                if (secondTerm != undefined) {
+                  let matchSubject2nd = secondTerm.subjects.find(asubject => asubject.subjectName == result[count].term[termcount].subjects[subjectcount].subjectName)
+                  if (!matchSubject2nd) { }
+                  else secondTermScore[subjectcount] = matchSubject2nd.totalScore
+                }
+                else secondTermScore[subjectcount] = 0
+              }
             }
-            else firstTermScore[subjectcount] = 0;
+            let reportcarddetails = await CardDetails.findOne({ programme: isStudent.programme })
+            let maxAttendance = reportcarddetails.maxAttendance
+            let nextTermDate = reportcarddetails.nextTermDate
+            let principalSign = reportcarddetails.principalSignature
+            let proprietorSign = reportcarddetails.proprietorSignature
 
-            if (secondTerm != undefined) {
-              let matchSubject2nd = secondTerm.subjects.find(asubject => asubject.subjectName == result[count].term[termcount].subjects[subjectcount].subjectName)
-              if (!matchSubject2nd) { }
-              else secondTermScore[subjectcount] = matchSubject2nd.totalScore
-            }
-            else secondTermScore[subjectcount] = 0
+            return res.status(200).json({
+              status: "success", message: `${alreadyHasScores.student_name}`, termName, className, sessionName, report, comment, grandTotal, marksObtained, avgPercentage,
+              stdPosition, firstTermScore, secondTermScore, timesPresent, timesAbsent, maxAttendance, noInClass, ameedComment, teacherSignature, principalSign, proprietorSign, nextTermDate
+            });
           }
         }
-        let reportcarddetails = await CardDetails.findOne({ programme: isStudent.programme })
-        let maxAttendance = reportcarddetails.maxAttendance
-        let nextTermDate = reportcarddetails.nextTermDate
-        let principalSign = reportcarddetails.principalSignature
-        let proprietorSign = reportcarddetails.proprietorSignature
-
-        return res.status(200).json({
-          status: "success", message: `${alreadyHasScores.student_name}`, termName, className, sessionName, report, comment, grandTotal, marksObtained, avgPercentage,
-          stdPosition, firstTermScore, secondTermScore, timesPresent, timesAbsent, maxAttendance, noInClass, ameedComment, teacherSignature, principalSign, proprietorSign, nextTermDate
-        });
       }
     }
   }
-}
-  }
-throw new NotFoundError("Error: no scores found for the term specified")
+  throw new NotFoundError("Error: no scores found for the term specified")
 }
 
 const getTermlyScores = async (req, res, next) => {
@@ -415,7 +415,7 @@ const getClassScores = async (req, res, next) => {
   })
   if (!classRequest) throw new NotFoundError("Error: the requested class does not exist");
   const classSubjects = classRequest.subjects
-  
+
   const detailsFound = await Score.find(
     {
       $and:
@@ -437,7 +437,7 @@ const getClassScores = async (req, res, next) => {
       }
     }
   }
-  if (classExists.length == 0 && attendanceExists.length == 0) throw new NotFoundError("Error: this class does not have any record for scores or attendance");
+  if (classExists.length) throw new NotFoundError("Error: this class does not have any scores record");
   if (detailsFound.length == 0 || classExists.length == 0) throw new NotFoundError("Error: no scores recorded for this class");
 
   res.status(200).json({ status: "success", message: "successful", classExists, classSubjects });
@@ -655,95 +655,123 @@ const generatePositons = async (req, res, next) => {
 
 const generateAttendance = async (req, res, next) => {
   const { className, termName, sessionName, programme } = req.query;
-  let classExists = [];
-  let classAttendance = [];
-  const classRequest = await sClass.findOne({
-    $and:
-      [
-        { className },
-        { programme }
-      ]
-  })
-  if (!classRequest) throw new NotFoundError("Error: the requested class does not exist");
-  const detailsFound = await Score.find(
-    {
-      $and:
-        [
-          { programme: programme },
-          { "scores.className": className },
-          { "scores.sessionName": sessionName },
-          { "scores.term.termName": termName },
-        ]
-    })
 
-  if (detailsFound.length != 0) {
-    // filter the students that are in the requested class in the requested session from the students returned
-    for (let n = 0; n < detailsFound.length; n++) {
-      const requestedclass = detailsFound[n].scores.find(asession => asession.sessionName == sessionName)
-      const requestedterm = requestedclass.term.find(aterm => aterm.termName == termName)
-
-      if (requestedclass.className == className && requestedterm !== undefined) {
-        classExists.push(detailsFound[n])
-      }
-    }
-  }
-  if (detailsFound.length == 0 || classExists.length == 0) throw new NotFoundError("Error: no scores recorded for this class");
-
-  //attendance
-  let reportcarddetails = await CardDetails.findOne({ programme })
-  let maxAttendance = reportcarddetails.maxAttendance
-  const attendanceExists = await Attendance.find(
-    {
-      $and:
-        [
-          { programme: programme },
-          { "attendanceRecord.className": className },
-          { "attendanceRecord.sessionName": sessionName },
-          { "attendanceRecord.term.termName": termName },
-        ]
-    })
-
-  if (attendanceExists.length == 0) throw new NotFoundError("Error: this class does not have any record for attendance");
-  if (classExists.length == 0 && attendanceExists.length == 0) throw new NotFoundError("Error: this class does not have any record for scores or attendance");
-
-  if (attendanceExists.length != 0) {
-    // filter the students that are in the requested class in the requested session from the students returned
-    for (let n = 0; n < attendanceExists.length; n++) {
-      const requestedclass = attendanceExists[n].attendanceRecord.find(asession => asession.sessionName == sessionName)
-      const requestedterm = requestedclass.term.find(aterm => aterm.termName == termName)
-
-      if (requestedclass.className == className && requestedterm !== undefined) {
-        classAttendance.push(attendanceExists[n])
-      }
-    }
-  }
-
-  // save attendance for each student to scores database
-  for (let i = 0; i < classExists.length; i++) {
-    const requestedsession = classExists[i].scores.find(asession => asession.sessionName == sessionName)
-    const requestedterm = requestedsession.term.find(aterm => aterm.termName == termName)
-    if (!requestedterm) continue;  //if student has no report for the term, continue to the next
-
-    // calculate attendance present aand absent times for students 
-    for (let j = 0; j < classAttendance.length; j++) {
-      if (classAttendance[j].admissionNumber === classExists[i].admissionNumber) {
-        let timesPresent = 0;
-        const attendancesession = classAttendance[j].attendanceRecord.find(asession => asession.sessionName == sessionName)
-        const attendanceterm = attendancesession.term.find(aterm => aterm.termName == termName)
-        for (let k = 0; k < attendanceterm.attendance.length; k++) {
-          if (attendanceterm.attendance[k].presence == 'yes') {
-            timesPresent = timesPresent + 1
-          }
+  // 1️⃣ Get all students with scores for this class/session/term
+  const scoreDocs = await Score.find({
+    programme,
+    scores: {
+      $elemMatch: {
+        sessionName,
+        className,
+        term: {
+          $elemMatch: { termName }
         }
-        requestedterm.attendancePresent = timesPresent
-        requestedterm.attendanceAbsent = maxAttendance - timesPresent
-        classExists[i].save()
       }
     }
+  })
+    .select("admissionNumber")
+    .lean();
+
+  console.log(scoreDocs)
+  if (!scoreDocs.length) {
+    return res.status(404).json({
+      status: "Fail",
+      message: "No scores found for this class/session/term/programme"
+    });
   }
 
-  res.status(200).json({ status: "success", message: "successful" });
-}
+  const allStudents = scoreDocs.map(s => s.admissionNumber);
+
+  // 2️⃣ Fetch attendance document
+  const attendanceDoc = await Attendance.findOne({
+    className,
+    programme,
+    sessionName,
+    termName
+  }).lean();
+
+  if (!attendanceDoc || !attendanceDoc.attendanceRecord.length) {
+    return res.status(404).json({
+      status: "Fail",
+      message: "No attendance records found for this term"
+    });
+  }
+
+  const totalDays = attendanceDoc.attendanceRecord.length;
+
+  // 3️⃣ Initialize attendance counts for ALL students
+  const attendanceCount = {};
+
+  for (const admNo of allStudents) {
+    attendanceCount[admNo] = {
+      present: 0,
+      absent: totalDays
+    };
+  }
+
+  // 4️⃣ Process attendance records
+  for (const record of attendanceDoc.attendanceRecord) {
+
+    for (const admNo in record.attendance) {
+      const present = record.attendance[admNo];
+
+      if (!attendanceCount[admNo]) continue;
+
+      if (present === true) {
+        attendanceCount[admNo].present += 1;
+        attendanceCount[admNo].absent -= 1;
+      }
+
+    }
+
+  }
+
+  // 5️⃣ Prepare bulk update operations
+  const bulkOps = [];
+
+  for (const admNo in attendanceCount) {
+    const counts = attendanceCount[admNo];
+
+    bulkOps.push({
+      updateOne: {
+        filter: {
+          admissionNumber: admNo,
+          scores: {
+            $elemMatch: {
+              sessionName,
+              className,
+              term: { $elemMatch: { termName } }
+            }
+          }
+        },
+        update: {
+          $set: {
+            "scores.$[session].term.$[term].attendancePresent": counts.present,
+            "scores.$[session].term.$[term].attendanceAbsent": counts.absent
+          }
+        },
+        arrayFilters: [
+          { "session.sessionName": sessionName, "session.className": className },
+          { "term.termName": termName }
+        ]
+      }
+    });
+
+  }
+
+  // 6️⃣ Execute bulk update
+  if (bulkOps.length) {
+    await Score.bulkWrite(bulkOps);
+  }
+
+  return res.status(200).json({
+    status: "Success",
+    message: "Attendance updated successfully for all students"
+  });
+};
+
+
+
 
 // TROUBLESHOOTING FOR DUPLICATES IN SCORES DATABASE
 // const getDuplicates = async (req, res, next) => {

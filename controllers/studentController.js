@@ -3,7 +3,7 @@ const Student = require("../models/studentModel");
 const Staff = require("../models/staffModel");
 const User = require("../models/userModel");
 const Score = require("../models/scoreModel");
-const Attendance = require("../models/attendanceModel");
+const Attendance = require("../models/newAttendanceModel");
 const Billing = require("../models/billingsModel");
 const {
   newStudentValidation,
@@ -256,12 +256,7 @@ const updateStudent = async (req, res, next) => {
     inScores.student_name = req.body.firstName + " " + req.body.lastName
     inScores.save()
   }
-  // find student in attendance database
-  const inAttendance = await Attendance.findOne({ admissionNumber: req.body.admNo })
-  if (inAttendance) {
-    inAttendance.student_name = req.body.firstName + " " + req.body.lastName
-    inAttendance.save()
-  }
+  
   // find student in billing database
   const inBilling = await Billing.findOne({ admissionNumber: req.body.admNo })
   if (inBilling) {
@@ -289,7 +284,6 @@ const updateStatus = async (req, res, next) => {
     const student = await Student.findOneAndUpdate({ admNo }, { studentStatus: "past", nonStudentStatus }, { new: true })
     if (!student) return next(new Error("Error: no such student found"));
     await Billing.findOneAndDelete({ admissionNumber: admNo })
-    await Attendance.findOneAndDelete({ admissionNumber: admNo })
   }
 
   res
@@ -641,9 +635,8 @@ const deleteStudent = async (req, res, next) => {
     throw new UnAuthorizedError("Error: Sorry, you are not allowed to delete students of other programmes")
   }
 
-  const studenttoDelete = await Student.findOneAndDelete({ admNo });
+  await Student.findOneAndDelete({ admNo });
   await Score.findOneAndDelete({ admissionNumber: admNo })
-  await Attendance.findOneAndDelete({ admissionNumber: admNo })
 
   res.status(200).json({ status: "success", message: "student deleted successfully" });
 };

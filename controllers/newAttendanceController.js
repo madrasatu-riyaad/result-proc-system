@@ -477,18 +477,17 @@ const deleteTermAttendance = async (req, res, next) => {
   }
 
   // 2️⃣ Fetch attendance documents
-  const attendanceDocs = await Attendance.find({
+  const attendanceDoc = await Attendance.findOne({
     termName: termName.trim(),
     sessionName: sessionName.trim(),
     programme: programme.trim(),
     className: className.trim(),
   }).lean();
 
-  if (!attendanceDocs || attendanceDocs.length === 0) {
+  if (!attendanceDoc || !attendanceDoc.attendanceRecord.length) {
     return res.status(404).json({
       status: "Fail",
-      message:
-        "No attendance records found for the specified class/session/term/programme",
+      message: "No attendance found for this term"
     });
   }
 
@@ -496,7 +495,7 @@ const deleteTermAttendance = async (req, res, next) => {
   const students = new Set();
   const dateMap = {};
 
-  attendanceDocs.forEach((doc) => {
+  attendanceDoc.forEach((doc) => {
     if (!doc.attendanceRecord) return;
 
     doc.attendanceRecord.forEach((record) => {
