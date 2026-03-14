@@ -406,7 +406,6 @@ const getScoresBySession = async (req, res, next) => {
 const getClassScores = async (req, res, next) => {
   const { className, termName, sessionName, programme } = req.query;
   let classExists = [];
-  let classAttendance = [];
   const classRequest = await sClass.findOne({
     $and:
       [
@@ -416,31 +415,7 @@ const getClassScores = async (req, res, next) => {
   })
   if (!classRequest) throw new NotFoundError("Error: the requested class does not exist");
   const classSubjects = classRequest.subjects
-
-  //attendance
-  const attendanceExists = await Attendance.find(
-    {
-      $and:
-        [
-          { programme: programme },
-          { "attendanceRecord.className": className },
-          { "attendanceRecord.sessionName": sessionName },
-          { "attendanceRecord.term.termName": termName },
-        ]
-    })
-
-  if (attendanceExists.length != 0) {
-    // filter the students that are in the requested class in the requested session from the students returned
-    for (let n = 0; n < attendanceExists.length; n++) {
-      const requestedclass = attendanceExists[n].attendanceRecord.find(asession => asession.sessionName == sessionName)
-      const requestedterm = requestedclass.term.find(aterm => aterm.termName == termName)
-
-      if (requestedclass.className == className && requestedterm !== undefined) {
-        classAttendance.push(attendanceExists[n])
-      }
-    }
-  }
-
+  
   const detailsFound = await Score.find(
     {
       $and:
@@ -465,7 +440,7 @@ const getClassScores = async (req, res, next) => {
   if (classExists.length == 0 && attendanceExists.length == 0) throw new NotFoundError("Error: this class does not have any record for scores or attendance");
   if (detailsFound.length == 0 || classExists.length == 0) throw new NotFoundError("Error: no scores recorded for this class");
 
-  res.status(200).json({ status: "success", message: "successful", classExists, classAttendance, classSubjects });
+  res.status(200).json({ status: "success", message: "successful", classExists, classSubjects });
 }
 
 const updateScores = async (req, res, next) => {

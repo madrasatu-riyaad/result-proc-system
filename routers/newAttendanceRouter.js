@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {getAttendance, getOneAttendance, markAttendance, editAttendanceDate, editAttendanceStatus, deleteDayAttendance, deleteTermAttendance} 
-       = require('../controllers/attendanceController')
+       = require('../controllers/newAttendanceController')
 const authenticateUser = require('../middleware/auth')
 const {superAdmin, admin, adminORteacher} = require('../middleware/roles')
 

@@ -13,7 +13,7 @@ const staffRouter = require('./routers/staffRouter');
 const studentRouter = require('./routers/studentRouter');
 const scoreRouter = require('./routers/scoreRouter');
 const classRouter = require('./routers/classRouter');
-const attendanceRouter = require('./routers/attendanceRouter');
+const newAttendanceRouter = require('./routers/newAttendanceRouter');
 const userRouter = require('./routers/userRouter');
 const assessmentRouter = require('./routers/assessmentRouter');
 const billingRouter = require('./routers/billingRouter');
@@ -52,7 +52,7 @@ app.use('/api/v1/student', studentRouter )
 app.use('/api/v1/scores', scoreRouter )
 app.use('/api/v1/class', classRouter )
 app.use('/api/v1/assessment', assessmentRouter )
-app.use('/api/v1/attendance', attendanceRouter )
+app.use('/api/v1/attendance2', newAttendanceRouter )
 app.use('/api/v1/billing', billingRouter )
 app.use(errorHandler)
 
