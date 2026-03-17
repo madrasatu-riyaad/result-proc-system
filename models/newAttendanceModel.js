@@ -31,4 +31,13 @@ const newAttendanceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+newAttendanceSchema.index({
+  programme: 1,
+  sessionName: 1,
+  termName: 1,
+  className: 1,
+  "attendanceRecord.termdate": 1
+});
+
+
 module.exports = mongoose.model('Attendances2', newAttendanceSchema);

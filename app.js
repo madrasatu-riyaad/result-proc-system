@@ -7,6 +7,7 @@ Joi.objectId = require('joi-objectid')(Joi);
 const jwt = require('jsonwebtoken')
 const cors = require('cors');
 const multer = require('multer') 
+const cron = require("node-cron");
 
 const connectDB = require('./db/connect')
 const staffRouter = require('./routers/staffRouter');
@@ -17,10 +18,12 @@ const newAttendanceRouter = require('./routers/newAttendanceRouter');
 const userRouter = require('./routers/userRouter');
 const assessmentRouter = require('./routers/assessmentRouter');
 const billingRouter = require('./routers/billingRouter');
+const attendanceTrackingRouter = require('./routers/attendanceTrackerRouter');
 const errorHandler= require('./middleware/errorHandler')
 const morgan = require('morgan')
 const express = require('express');
 const app = express();
+require("./cron/attendanceCron");
 
 app.set('view-engine', 'pug')
 app.set('views', './views')
@@ -29,6 +32,7 @@ app.use(express.json());
 app.use(express.urlencoded({extended:true}))
 app.use(cors());
 app.use(express.static('public'))
+
 
 app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -54,7 +58,9 @@ app.use('/api/v1/class', classRouter )
 app.use('/api/v1/assessment', assessmentRouter )
 app.use('/api/v1/attendance2', newAttendanceRouter )
 app.use('/api/v1/billing', billingRouter )
+app.use('/api/v1/attendancetracking', attendanceTrackingRouter )
 app.use(errorHandler)
+// initCrons();
 
  const port = process.env.PORT || 5000
 

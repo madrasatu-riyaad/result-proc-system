@@ -426,18 +426,18 @@ const getClassScores = async (req, res, next) => {
           { "scores.term.termName": termName },
         ]
     })
+    
   if (detailsFound.length != 0) {
     // filter the students that are in the requested class in the requested session from the students returned
     for (let n = 0; n < detailsFound.length; n++) {
       const requestedclass = detailsFound[n].scores.find(asession => asession.sessionName == sessionName)
       const requestedterm = requestedclass.term.find(aterm => aterm.termName == termName)
-
       if (requestedclass.className == className && requestedterm !== undefined) {
         classExists.push(detailsFound[n])
       }
     }
   }
-  if (classExists.length) throw new NotFoundError("Error: this class does not have any scores record");
+ 
   if (detailsFound.length == 0 || classExists.length == 0) throw new NotFoundError("Error: no scores recorded for this class");
 
   res.status(200).json({ status: "success", message: "successful", classExists, classSubjects });

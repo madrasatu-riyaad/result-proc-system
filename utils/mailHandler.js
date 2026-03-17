@@ -21,12 +21,40 @@ const SENDMAIL = async (email, subject, text) => {
             html: htmlContent
         });
 
-        console.log("Email sent successfully:", response);
+          if (response.error) {
+            console.error("Email Sending Error:", response.error);
+        } else {
+            console.log("Reset password email sent:", response.data);
+        }
+
     } catch (error) {
-        console.log("Error sending email:", error);
+        console.log("Reset password email failed:", error);
     }
 };
 
+
+// ======================
+// SEND NOTIFICATION TO SPERADMINS ON UNMARKED ATTENDANCE
+// ======================
+const SEND_NOTIFICATION_EMAIL = async (email, subject, html) => {
+    try {
+        const response = await resend.emails.send({
+            from: `Riyad Madrasah Mgt System <support@${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: subject,
+            html: html
+        });
+
+        if (response.error) {
+            console.error("Notification email error:", response.error);
+        } else {
+            console.log("Notification email sent:", response.data);
+        }
+
+    } catch (error) {
+        console.log("Notification email failed:", error);
+    }
+};
 
 
 // ======================
@@ -54,7 +82,7 @@ const GETMAIL = async (fullname, email, phone, subject, message) => {
 };
 
 
-module.exports = { SENDMAIL, GETMAIL };
+module.exports = { SENDMAIL, GETMAIL, SEND_NOTIFICATION_EMAIL };
 
 
 
