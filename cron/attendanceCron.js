@@ -3,6 +3,12 @@ const Attendances2 = require("../models/newAttendanceModel");
 const AttendanceTracker = require("../models/attendanceTrackingModel");
 const Staff = require("../models/staffModel");
 const { SEND_NOTIFICATION_EMAIL } = require("../utils/mailHandler");
+const { createClient } = require("@supabase/supabase-js");
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 let lastBreakNotice = {};
 let lastEndDayNotice = {};
@@ -30,9 +36,39 @@ const isTodayUTC = (date, localNow) => {
 
 const runAttendanceReminder = async () => {
   try {
+    // ---------- STEP 3a: Supabase heartbeat ----------
+    try {
+      const FIVE_DAYS = 5 * 24 * 60 * 60 * 1000; // 5 days
+      const { data: meta, error } = await supabase
+        .from("system_meta")
+        .select("last_seen")
+        .eq("id", 1)
+        .single();
+
+      const lastSeen = meta?.last_seen ? new Date(meta.last_seen) : null;
+      const now = new Date();
+
+      if (!lastSeen || (now - lastSeen) > FIVE_DAYS) {
+        const { data, error } = await supabase
+          .from("system_meta")
+          .upsert({
+            id: 1,
+            last_seen: now.toISOString(),
+            source: "attendance_cron"
+          });
+
+        if (error) console.error("Supabase heartbeat failed:", error.message);
+        else console.log("✅ Supabase heartbeat sent successfully");
+      } else {
+        console.log("Supabase heartbeat not needed yet. Last seen:", lastSeen);
+      }
+    } catch (e) {
+      console.error("Supabase heartbeat error:", e.message);
+    }
     resetDailyTracking();
 
     const now = new Date();
+
     const localNow = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Lagos" }));
     const currentTime = localNow.toTimeString().slice(0, 5);
     const todayString = localNow.toDateString();
@@ -137,5 +173,5 @@ const runAttendanceReminder = async () => {
   }
 };
 
-// Run every minute
-cron.schedule("* * * * *", runAttendanceReminder);
+// Run every 10 minutes
+cron.schedule("*/10 * * * *", runAttendanceReminder);
