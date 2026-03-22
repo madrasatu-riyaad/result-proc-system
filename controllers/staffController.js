@@ -2,10 +2,9 @@ const { MailNotSentError, BadUserRequestError, NotFoundError, UnAuthorizedError 
   require('../middleware/errors')
 require('dotenv').config();
 const _ = require('lodash')
-const bcrypt = require('bcrypt')
-const crypto = require('crypto');
 const User = require("../models/userModel");
 const Staff = require("../models/staffModel");
+const Class = require('../models/classModel');
 const CardDetails = require("../models/carddetailsModel");
 const Token = require('../models/tokenModel')
 
@@ -308,29 +307,50 @@ const deleteStaff = async (req, res, next) => {
 const setDetails = async (req, res, next) => {
   const { programme } = req.query;
 
-  const isValidStaff = await Staff.findOne({ email: req.user.email })
+  const isValidStaff = await Staff.findOne({ email: req.user.email });
   if (isValidStaff.teacherProgramme != programme) {
-    throw new UnAuthorizedError("Error: Sorry, you are not allowed to set details of other programmes")
+    throw new UnAuthorizedError(
+      "Error: Sorry, you are not allowed to set details of other programmes"
+    );
   }
-  const { maxAttendance, nextTermDate } = req.body;
 
-  const detailsExist = await CardDetails.findOne({ programme })
+  const { maxAttendance, nextTermDate, sessionName, termName } = req.body;
+
+  // create or update card details
+  let detailsExist = await CardDetails.findOne({ programme });
   if (!detailsExist) {
-    const addDetails = await CardDetails.create({ ...req.body, programme })
-    return res.status(201).json({
-      status: "Success",
-      message: "details added successfully",
-      addDetails
-    });
+    detailsExist = await CardDetails.create({ ...req.body, programme });
+  } else {
+    detailsExist.maxAttendance = maxAttendance;
+    detailsExist.nextTermDate = nextTermDate;
+    await detailsExist.save();
   }
-  detailsExist.maxAttendance = maxAttendance;
-  detailsExist.nextTermDate = nextTermDate;
-  detailsExist.save();
 
-  res.status(200).json({
+  // RELEASE LOGIC: update all classes under this programme for this session and term
+  const classes = await Class.find({ programme });
+  for (const cls of classes) {
+    const term = cls.termlyDetails.find(
+      (t) => t.sessionName === sessionName && t.termName === termName
+    );
+    if (term) {
+      term.released = true;
+    } else {
+      // if term doesn't exist yet, add it and release
+      cls.termlyDetails.push({
+        sessionName,
+        termName,
+        released: true,
+      });
+    }
+    await cls.save();
+  }
+
+  res.status(detailsExist.isNew ? 201 : 200).json({
     status: "Success",
-    message: "details updated successfully",
-    detailsExist
+    message: detailsExist.isNew
+      ? "Details added successfully and classes released"
+      : "Details updated successfully and classes released",
+    detailsExist,
   });
 };
 

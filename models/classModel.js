@@ -22,6 +22,10 @@ const classSchema = new mongoose.Schema({
             type: mongoose.Types.ObjectId,
             ref: "Staff",
         },
+        released: {
+            type: Boolean,
+            default: false
+        }
     }],
 
 })
