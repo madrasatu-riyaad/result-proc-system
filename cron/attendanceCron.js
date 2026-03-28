@@ -34,6 +34,19 @@ const isTodayUTC = (date, localNow) => {
   );
 };
 
+const isWithinTimeWindow = (targetTime, currentTime) => {
+  if (!targetTime) return false;
+
+  const [th, tm] = targetTime.split(":").map(Number);
+  const [ch, cm] = currentTime.split(":").map(Number);
+
+  const targetMinutes = th * 60 + tm;
+  const currentMinutes = ch * 60 + cm;
+
+  return Math.abs(currentMinutes - targetMinutes) < 10;
+};
+
+
 const runAttendanceReminder = async () => {
   try {
     // ---------- STEP 3a: Supabase heartbeat ----------
@@ -83,8 +96,10 @@ const runAttendanceReminder = async () => {
       if (!config.teachingDays.includes(todayDay)) continue;
 
       const reminderTypes = [];
-      if (config.reminders.breakTime === currentTime) reminderTypes.push("break");
-      if (config.reminders.endOfDay === currentTime) reminderTypes.push("endOfDay");
+      if (isWithinTimeWindow(config.reminders.breakTime, currentTime))
+        reminderTypes.push("break");
+      if (isWithinTimeWindow(config.reminders.endOfDay, currentTime))
+        reminderTypes.push("endOfDay");
       if (!reminderTypes.length) continue;
 
       // Fetch attendance docs for this programme and class
