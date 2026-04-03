@@ -46,6 +46,9 @@ const submitDetails = async (req, res, next) => {
         breakTime: reminders?.breakTime || null,
         endOfDay: reminders?.endOfDay || null
       },
+      weeklySummary: reminders?.weeklyTime
+        ? { time: reminders.weeklyTime }
+        : undefined,
       active: active !== undefined ? active : true
     });
 
@@ -66,4 +69,4 @@ const submitDetails = async (req, res, next) => {
 
 
 
-module.exports = {submitDetails}
+module.exports = { submitDetails }

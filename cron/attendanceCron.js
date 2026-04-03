@@ -1,192 +1,279 @@
 const cron = require("node-cron");
-const Attendances2 = require("../models/newAttendanceModel");
 const AttendanceTracker = require("../models/attendanceTrackingModel");
+const Attendances2 = require("../models/newAttendanceModel");
 const Staff = require("../models/staffModel");
+const CronLog = require("../models/cronLogModel");
 const { SEND_NOTIFICATION_EMAIL } = require("../utils/mailHandler");
-const { createClient } = require("@supabase/supabase-js");
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
+/* ================= SAFETY ================= */
 
-let lastBreakNotice = {};
-let lastEndDayNotice = {};
-let breakWarnedClasses = {};
+process.on("unhandledRejection", (err) => {
+  console.error("🔥 Unhandled Rejection:", err);
+});
 
-// Reset daily trackers at midnight Lagos time
-const resetDailyTracking = () => {
-  const now = new Date();
-  const localNow = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Lagos" }));
-  if (localNow.getHours() === 0 && localNow.getMinutes() === 0) {
-    lastBreakNotice = {};
-    lastEndDayNotice = {};
-    breakWarnedClasses = {};
-  }
-};
+/* ================= TIME HELPERS ================= */
 
-// Helper: check if a date is today (UTC-safe)
-const isTodayUTC = (date, localNow) => {
-  return (
-    date.getUTCFullYear() === localNow.getUTCFullYear() &&
-    date.getUTCMonth() === localNow.getUTCMonth() &&
-    date.getUTCDate() === localNow.getUTCDate()
-  );
-};
-
-const isWithinTimeWindow = (targetTime, currentTime) => {
+const hasTimePassed = (targetTime, currentTime) => {
   if (!targetTime) return false;
 
   const [th, tm] = targetTime.split(":").map(Number);
+  const target = th * 60 + tm;
+
   const [ch, cm] = currentTime.split(":").map(Number);
+  const current = ch * 60 + cm;
 
-  const targetMinutes = th * 60 + tm;
-  const currentMinutes = ch * 60 + cm;
-
-  return Math.abs(currentMinutes - targetMinutes) < 10;
+  return current >= target;
 };
 
+const daysOrder = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
-const runAttendanceReminder = async () => {
+const getReviewDay = (teachingDays) => {
+  if (!teachingDays || teachingDays.length === 0) return null;
+
+  const sorted = [...teachingDays].sort(
+    (a, b) => daysOrder.indexOf(a) - daysOrder.indexOf(b),
+  );
+
+  const firstTeachingDay = sorted[0];
+  const index = daysOrder.indexOf(firstTeachingDay);
+
+  return daysOrder[(index - 1 + 7) % 7];
+};
+
+const getWeekId = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const start = new Date(year, 0, 1);
+  const days = Math.floor((d - start) / 86400000);
+  const week = Math.ceil((days + start.getDay() + 1) / 7);
+  return `${year}-W${week}`;
+};
+
+/* ================= MAIN JOB ================= */
+
+const runAttendanceJob = async () => {
   try {
-    // ---------- STEP 3a: Supabase heartbeat ----------
-    try {
-      const FIVE_DAYS = 5 * 24 * 60 * 60 * 1000; // 5 days
-      const { data: meta, error } = await supabase
-        .from("system_meta")
-        .select("last_seen")
-        .eq("id", 1)
-        .single();
-
-      const lastSeen = meta?.last_seen ? new Date(meta.last_seen) : null;
-      const now = new Date();
-
-      if (!lastSeen || (now - lastSeen) > FIVE_DAYS) {
-        const { data, error } = await supabase
-          .from("system_meta")
-          .upsert({
-            id: 1,
-            last_seen: now.toISOString(),
-            source: "attendance_cron"
-          });
-
-        if (error) console.error("Supabase heartbeat failed:", error.message);
-        else console.log("✅ Supabase heartbeat sent successfully");
-      } else {
-        console.log("Supabase heartbeat not needed yet. Last seen:", lastSeen);
-      }
-    } catch (e) {
-      console.error("Supabase heartbeat error:", e.message);
-    }
-    resetDailyTracking();
-
     const now = new Date();
 
-    const localNow = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Lagos" }));
+    const localNow = new Date(
+      now.toLocaleString("en-US", { timeZone: "Africa/Lagos" }),
+    );
+
     const currentTime = localNow.toTimeString().slice(0, 5);
-    const todayString = localNow.toDateString();
+    const today = localNow.toLocaleDateString("en-US", {
+      timeZone: "Africa/Lagos",
+    });
+
+    const todayDay = localNow.toLocaleDateString("en-US", {
+      weekday: "long",
+      timeZone: "Africa/Lagos",
+    });
+
+    const weekId = getWeekId(localNow);
 
     const configs = await AttendanceTracker.find({ active: true });
-    const superadmins = await Staff.find({ role: "superadmin" });
-
-    const summary = [];
+    const admins = await Staff.find({ role: "superadmin" });
 
     for (const config of configs) {
-      const todayDay = localNow.toLocaleDateString("en-US", { weekday: "long" });
-      if (!config.teachingDays.includes(todayDay)) continue;
+      /* ================= DAILY ================= */
 
-      const reminderTypes = [];
-      if (isWithinTimeWindow(config.reminders.breakTime, currentTime))
-        reminderTypes.push("break");
-      if (isWithinTimeWindow(config.reminders.endOfDay, currentTime))
-        reminderTypes.push("endOfDay");
-      if (!reminderTypes.length) continue;
+      const shouldRunDaily =
+        config.teachingDays.includes(todayDay) &&
+        hasTimePassed(config.reminders?.endOfDay, currentTime) &&
+        config.lastDailySent !== today;
 
-      // Fetch attendance docs for this programme and class
-      const attendanceDocs = await Attendances2.find({
-        programme: config.programme,
-        sessionName: config.sessionName,
-        termName: config.termName,
-        className: { $in: config.classes },
-      }).select("className attendanceRecord");
+      if (shouldRunDaily) {
+        const records = await Attendances2.find({
+          programme: config.programme,
+          sessionName: config.sessionName,
+          termName: config.termName,
+          className: { $in: config.classes },
+        });
 
-      const attendanceMap = {};
-      for (const doc of attendanceDocs) {
-        const todayRecord = doc.attendanceRecord.find((r) =>
-          isTodayUTC(new Date(r.termdate), localNow)
-        );
-        if (todayRecord) attendanceMap[doc.className] = true;
-      }
+        const unmarked = [];
 
-      const unmarkedClasses = config.classes.filter((c) => !attendanceMap[c]);
-      if (!unmarkedClasses.length) continue;
+        for (const r of records) {
+          const markedToday = r.attendanceRecord.some((a) => {
+            const d = new Date(a.termdate).toLocaleDateString("en-US", {
+              timeZone: "Africa/Lagos",
+            });
 
-      for (const type of reminderTypes) {
-        if (type === "break") {
-          if (lastBreakNotice[config.programme] === todayString) continue;
-
-          const subject = `Break-time Attendance Reminder (${config.programme})`;
-          const html = `
-            <p>The following classes have not marked attendance today:</p>
-            <ul>${unmarkedClasses.map((c) => `<li>${c}</li>`).join("")}</ul>
-            <p>Please follow up with the teachers.</p>
-          `;
-
-          for (const admin of superadmins) {
-            await SEND_NOTIFICATION_EMAIL(admin.email, subject, html);
-          }
-
-          lastBreakNotice[config.programme] = todayString;
-          breakWarnedClasses[config.programme] = [...unmarkedClasses];
-
-          summary.push({
-            programme: config.programme,
-            type: "Break-time",
-            unmarked: unmarkedClasses.length,
+            return d === today;
           });
+
+          if (!markedToday) unmarked.push(r.className);
         }
 
-        if (type === "endOfDay") {
-          if (lastEndDayNotice[config.programme] === todayString) continue;
-
-          const remainingClasses = unmarkedClasses.filter(
-            (c) => breakWarnedClasses[config.programme]?.includes(c)
-          );
-          if (!remainingClasses.length) continue;
-
-          const subject = `End-of-day Attendance Reminder (${config.programme})`;
+        if (unmarked.length) {
           const html = `
-            <p>The following classes still have not marked attendance today:</p>
-            <ul>${remainingClasses.map((c) => `<li>${c}</li>`).join("")}</ul>
-            <p>Please follow up with the teachers before the day ends.</p>
+            <p><b>Today's attendance missing for the following classes</b></p>
+            <ul>
+              ${unmarked.map((c) => `<li>${c}</li>`).join("")}
+            </ul>
           `;
 
-          for (const admin of superadmins) {
-            await SEND_NOTIFICATION_EMAIL(admin.email, subject, html);
+          for (const admin of admins) {
+            await SEND_NOTIFICATION_EMAIL(
+              admin.email,
+              `Daily Attendance Alert (${config.programme})`,
+              html,
+            );
+
+            await CronLog.create({
+              type: "daily",
+              programme: config.programme,
+              status: "success",
+              message: "sent",
+            });
+          }
+        }
+
+        config.lastDailySent = today;
+        await config.save();
+      }
+
+      /* ================= WEEKLY ================= */
+
+      const reviewDay = getReviewDay(config.teachingDays);
+
+      const shouldRunWeekly =
+        todayDay === reviewDay &&
+        hasTimePassed(config.weeklySummary?.time, currentTime) &&
+        config.lastWeeklySummarySent !== weekId;
+
+      if (shouldRunWeekly) {
+        const records = await Attendances2.find({
+          programme: config.programme,
+          sessionName: config.sessionName,
+          termName: config.termName,
+        });
+
+        const missing = [];
+
+        for (const className of config.classes) {
+          const record = records.find((r) => r.className === className);
+
+          if (!record) {
+            missing.push({
+              class: className,
+              days: [...config.teachingDays],
+            });
+            continue;
           }
 
-          lastEndDayNotice[config.programme] = todayString;
+          const missedDays = [];
+          const attendance = record.attendanceRecord || [];
 
-          summary.push({
-            programme: config.programme,
-            type: "End-of-day",
-            unmarked: remainingClasses.length,
-          });
+          for (const day of config.teachingDays) {
+            const found = attendance.some((a) => {
+              if (!a.termdate) return false;
+
+              const recordedDay = new Date(a.termdate).toLocaleDateString(
+                "en-US",
+                {
+                  weekday: "long",
+                  timeZone: "Africa/Lagos",
+                },
+              );
+
+              return recordedDay === day;
+            });
+
+            if (!found) {
+              missedDays.push(day);
+            }
+          }
+
+          if (missedDays.length > 0) {
+            missing.push({
+              class: className,
+              days: missedDays,
+            });
+          }
         }
-      }
-    }
 
-    // Daily console summary
-    if (summary.length) {
-      console.log(
-        `Attendance reminders sent at ${currentTime} Lagos time:\n`,
-        summary.map((s) => `${s.type} — ${s.programme}: ${s.unmarked} unmarked classes`).join("\n")
-      );
+        // console.log("FINAL MISSING RESULT:", JSON.stringify(missing, null, 2));
+
+        if (missing.length > 0) {
+          const html = `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+            <h3>Attendance Report for Last Week</h3>
+
+              ${missing.length === 0
+              ? `<p>✅ All classes are fully marked for the week.</p>`
+              : `
+                  <p style="color: #8d0404;">
+                  <b>These classes have missing attendance records. Please follow up.</b>
+                  </p>
+                ${missing
+                .map(
+                  (item) => `
+                <div style="margin-bottom: 15px;">
+                  <p><b>Class:</b> ${item.class}</p>
+                  <p><b>Missing Days:</b></p>
+                  <ul>
+                    ${item.days.map((d) => `<li>${d}</li>`).join("")}
+                  </ul>
+                </div>
+                `,
+                )
+                .join("")}
+              `
+            }
+            <hr/>
+            <small>This is an automated attendance report.</small>
+          </div>
+        `;
+
+          for (const admin of admins) {
+            await SEND_NOTIFICATION_EMAIL(
+              admin.email,
+              `Weekly Attendance Summary (${config.programme})`,
+              html,
+            );
+
+            await CronLog.create({
+              type: "weekly",
+              programme: config.programme,
+              status: "success",
+              message: "sent",
+            });
+          }
+        }
+
+        config.lastWeeklySummarySent = weekId;
+        await config.save();
+      }
     }
   } catch (err) {
-    console.error("Attendance reminder error:", err);
+    console.error("❌ Attendance job error:", err.message);
   }
 };
 
-// Run every 10 minutes
-cron.schedule("*/10 * * * *", runAttendanceReminder);
+/* ================= CRON ================= */
+
+let running = false;
+
+cron.schedule("*/10 * * * *", async () => {
+  if (running) return;
+
+  running = true;
+
+  try {
+    await runAttendanceJob();
+  } finally {
+    running = false;
+  }
+});
+
+console.log("✅ Attendance cron initialized");
+
+module.exports = { runAttendanceJob };
