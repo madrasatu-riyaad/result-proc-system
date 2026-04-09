@@ -1,11 +1,17 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose')
 
 const attendanceTrackingSchema = new mongoose.Schema(
   {
     programme: String,
     classes: [String],
+
     sessionName: String,
     termName: String,
+
+    // ✅ NEW: ACTIVE CONTEXT FOR THIS PROGRAMME
+    currentSessionName: String,
+    currentTermName: String,
+    isCurrent: { type: Boolean, default: true },
 
     startDate: Date,
     endDate: Date,
@@ -14,20 +20,19 @@ const attendanceTrackingSchema = new mongoose.Schema(
 
     reminders: {
       firstReminder: String,
-      breakTime: String, // kept for future use
+      breakTime: String,
       endOfDay: String,
     },
 
     weeklySummary: {
       time: {
         type: String,
-        default: "18:15"
-      }
+        default: "08:00",
+      },
     },
 
-    // SYSTEM TRACKING (DO NOT SET FROM FRONTEND)
-    lastDailySent: String, // YYYY-MM-DD
-    lastWeeklySummarySent: String, // YYYY-WW
+    lastDailySent: String,
+    lastWeeklySummarySent: String,
     active: Boolean,
   },
   { timestamps: true }
