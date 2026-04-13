@@ -1,5 +1,5 @@
+const CronLog = require("../models/cronLogModel");
 const Resend = require("resend").Resend;
-
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 
@@ -21,7 +21,7 @@ const SENDMAIL = async (email, subject, text) => {
             html: htmlContent
         });
 
-          if (response.error) {
+        if (response.error) {
             console.error("Email Sending Error:", response.error);
         } else {
             console.log("Reset password email sent:", response.data);
@@ -36,8 +36,37 @@ const SENDMAIL = async (email, subject, text) => {
 // ======================
 // SEND NOTIFICATION TO SPERADMINS ON UNMARKED ATTENDANCE
 // ======================
-const SEND_NOTIFICATION_EMAIL = async (email, subject, html) => {
+const SEND_NOTIFICATION_EMAIL = async (
+    email,
+    subject,
+    html,
+    meta = {}
+) => {
     try {
+        const type = meta.type;
+        if (!type) {
+            console.log("Missing email type (daily/weekly)");
+            return;
+        }
+        const programme = meta.programme || "default";
+        const dateKey = meta.dateKey || null;
+        const weekKey = meta.weekKey || null;
+
+        const emailKey = `${type}:${programme}:${dateKey || weekKey || "global"}:${email}`;
+
+        // ===============================
+        // 🛑 IDEMPOTENCY CHECK (BLOCK DUPLICATES)
+        // ===============================
+        const exists = await CronLog.findOne({ emailKey });
+
+        if (exists) {
+            console.log("⚠️ Duplicate email blocked:", emailKey);
+            return;
+        }
+
+        // ===============================
+        // SEND EMAIL
+        // ===============================
         const response = await resend.emails.send({
             from: `Riyad Madrasah Mgt System <support@${process.env.EMAIL_USER}>`,
             to: email,
@@ -47,9 +76,22 @@ const SEND_NOTIFICATION_EMAIL = async (email, subject, html) => {
 
         if (response.error) {
             console.error("Notification email error:", response.error);
-        } else {
-            console.log("Notification email sent:", response.data);
+            return;
         }
+
+        console.log("✅ Notification email sent:", response.data);
+
+        // ===============================
+        // LOCK IT IN DB (PREVENT RE-SEND)
+        // ===============================
+        await CronLog.create({
+            type,
+            programme,
+            dateKey,
+            weekKey,
+            emailKey,
+            status: "success"
+        });
 
     } catch (error) {
         console.log("Notification email failed:", error);

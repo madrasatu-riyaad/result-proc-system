@@ -23,19 +23,18 @@ const cronLogSchema = new mongoose.Schema({
     default: "",
   },
 
-  attempts: {
-    type: Number,
-    default: 1,
-  },
-
   createdAt: {
     type: Date,
     default: Date.now,
   },
 });
 
-/* ================= INDEXING (IMPORTANT BUT LIGHTWEIGHT) ================= */
-cronLogSchema.index({ createdAt: -1 });
+/* indexes */
 cronLogSchema.index({ type: 1, programme: 1 });
+
+cronLogSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: 60 * 60 * 24 * 30 }
+);
 
 module.exports = mongoose.model("CronLog", cronLogSchema);
