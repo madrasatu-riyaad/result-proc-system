@@ -53,18 +53,13 @@ const runAttendanceJob = async () => {
   running = true;
 
   try {
-    // console.log("▶️ Job started:", new Date().toISOString());
-
     const now = new Date(
       new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" })
     );
-
     const currentTime = now.toTimeString().slice(0, 5);
-
     const todayKey = now.toLocaleDateString("en-CA", {
       timeZone: "Africa/Lagos",
     });
-
     const todayDay = now
       .toLocaleDateString("en-US", {
         weekday: "long",
@@ -107,6 +102,7 @@ const runAttendanceJob = async () => {
 
       /* ================= DAILY EXECUTION ================= */
       if (shouldRunDaily) {
+        console.log("Daily attendance job running");
         const records = await Attendances2.find({
           programme: config.programme,
           sessionName: config.sessionName,
@@ -165,6 +161,7 @@ const runAttendanceJob = async () => {
 
       /* ================= WEEKLY EXECUTION ================= */
       if (shouldRunWeekly) {
+        console.log("Weekly attendance job running");
         const records = await Attendances2.find({
           programme: config.programme,
           sessionName: config.sessionName,
@@ -179,20 +176,15 @@ const runAttendanceJob = async () => {
         );
 
         const missing = [];
-
         for (const className of config.classes) {
           const record = records.find((r) => r.className === className);
-
           const missingDates = [];
-
           for (const date of expectedDates) {
             const dateKey = date.toLocaleDateString("en-CA", {
               timeZone: "Africa/Lagos",
             });
-
             const found = record?.attendanceRecord?.some((a) => {
               if (!a.termdate) return false;
-
               const recordKey = new Date(a.termdate).toLocaleDateString(
                 "en-CA",
                 { timeZone: "Africa/Lagos" }
@@ -262,7 +254,6 @@ const runAttendanceJob = async () => {
       }
     }
 
-    // console.log("✅ Job finished");
   } catch (err) {
     console.error("❌ Cron Error:", err);
   } finally {
@@ -273,7 +264,7 @@ const runAttendanceJob = async () => {
 /* ================= CRON ================= */
 
 cron.schedule("*/10 * * * *", async () => {
-  console.log("🔥 CRON FIRED:", new Date().toISOString());
+  // console.log("🔥 CRON FIRED:", new Date().toISOString());
   await runAttendanceJob();
 });
 

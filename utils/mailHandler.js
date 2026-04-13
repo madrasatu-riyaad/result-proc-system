@@ -52,7 +52,7 @@ const SEND_NOTIFICATION_EMAIL = async (
         const dateKey = meta.dateKey || null;
         const weekKey = meta.weekKey || null;
 
-        const emailKey = `${type}:${programme}:${dateKey || weekKey || "global"}:${email}`;
+        const emailKey = `${type}:${programme}:${dateKey || weekKey || "global"}`;
 
         // ===============================
         // 🛑 IDEMPOTENCY CHECK (BLOCK DUPLICATES)

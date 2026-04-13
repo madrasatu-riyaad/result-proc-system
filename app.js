@@ -54,16 +54,6 @@ app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
-// ✅ MANUAL CRON TRIGGER
-app.get("/cron/attendance", async (req, res) => {
-    try {
-        await runAttendanceJob();
-        res.status(200).send("Cron executed");
-    } catch (err) {
-        console.error("Cron error:", err);
-        res.status(500).send("Cron failed");
-    }
-});
 
 // ❗ LAST
 app.use(errorHandler)
