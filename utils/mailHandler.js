@@ -15,7 +15,7 @@ const SENDMAIL = async (email, subject, text) => {
         `;
 
         const response = await resend.emails.send({
-            from: `Support Team at Riyad <${process.env.EMAIL_USER}>`,
+            from: `Support Team at Riyad <noreply@${process.env.EMAIL_USER}>`,
             to: email,
             subject: subject,
             html: htmlContent
@@ -104,8 +104,6 @@ const SEND_NOTIFICATION_EMAIL = async (
 // ======================
 const GETMAIL = async (fullname, email, phone, subject, message) => {
     try {
-        console.log("👉 GETMAIL STARTED");
-
         const htmlContent = `
             <p><strong>Message:</strong></p>
             <p>${message}</p>
