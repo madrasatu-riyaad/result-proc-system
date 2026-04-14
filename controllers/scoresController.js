@@ -638,81 +638,6 @@ const getScoresBySession = async (req, res, next) => {
   }
 }
 
-// const getClassScores = async (req, res, next) => {
-//   const { className, termName, sessionName, programme } = req.query;
-
-//   let classExists = [];
-//   let unscoredStudents = [];
-
-//   const classRequest = await sClass.findOne({
-//     className,
-//     programme
-//   });
-
-//   if (!classRequest)
-//     throw new NotFoundError("Error: the requested class does not exist");
-
-//   const classSubjects = classRequest.subjects;
-
-//   // ✅ FIXED QUERY (removed broken term filter)
-//   const detailsFound = await Score.find({
-//     programme: programme,
-//     "scores.className": className,
-//     "scores.sessionName": sessionName,
-//   });
-
-//   if (detailsFound.length === 0)
-//     throw new NotFoundError("Error: no scores recorded for this class");
-
-//   const students = await Student.find({programme}, {presentClass: className}, { studentStatus: "current" } )
-//   for (let n = 0; n < detailsFound.length; n++) {
-//     const requestedclass = detailsFound[n].scores.find(
-//       s => s.sessionName == sessionName && s.className == className
-//     );
-
-//     if (!requestedclass) continue;
-
-//     const requestedterm = requestedclass.term.find(
-//       t => t.termName == termName
-//     );
-
-//     if (requestedterm) {
-//       // ✅ scored students 
-//       classExists.push(detailsFound[n]);
-//     } else {  
-//       // unscored students 
-
-//       const studentId = detailsFound[n].studentId;
-//       const student = await Student.findById(studentId);
-//       if (!student) {
-//         throw new BadUserRequestError("No student exists");
-//       }
-//       // Skip past students
-
-//         if (student.studentStatus === "past") {
-//           continue;
-//       }
-
-//       unscoredStudents.push(detailsFound[n]);
-//     }
-//   }
-
-//   if (classExists.length === 0 && unscoredStudents.length === 0)
-//     throw new NotFoundError("Error: no scores recorded for this class");
-
-//   res.status(200).json({
-//     status: "success",
-//     message: `successful${unscoredStudents.length > 0
-//       ? ` - ${unscoredStudents.length} student(s) not yet scored`
-//       : ""
-//       }`,
-//     classExists,
-//     unscoredStudents,
-//     unscoredCount: unscoredStudents.length,
-//     classSubjects,
-//   });
-// };
-
 
 const getClassScores = async (req, res, next) => {
   const { className, termName, sessionName, programme } = req.query;
@@ -783,7 +708,7 @@ const getClassScores = async (req, res, next) => {
 
       // ✅ KEEP FULL SCORE DOCUMENT STRUCTURE (your requirement)
       classExists.push({
-        ...detailsFound[n]._doc, 
+        ...detailsFound[n]._doc,
         term: requestedterm       // ensure correct term only
       });
     }
@@ -808,8 +733,8 @@ const getClassScores = async (req, res, next) => {
   return res.status(200).json({
     status: "success",
     message: `successful${unscoredStudents.length > 0
-        ? ` - ${unscoredStudents.length} student(s) not yet scored`
-        : ""
+      ? ` - ${unscoredStudents.length} student(s) not yet scored`
+      : ""
       }`,
     classExists,
     unscoredStudents,
@@ -849,6 +774,9 @@ const updateScores = async (req, res, next) => {
     throw new BadUserRequestError("Error: Student does not have scores for this term");
   }
 
+  // class and programme
+  const className = session.className;
+  const programme = alreadyHasScores.programme;
   // check if results for the term are released
   const classmatch = await sClass.findOne({
     className,

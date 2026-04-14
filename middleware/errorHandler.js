@@ -5,7 +5,7 @@ const startupDebugger = require('debug')('app:startup')
 
 
 const ErrorHandler = (err, req, res, next) => {
-    console.error("Middleware Error:", err.message);
+    console.error("ERROR STACK:", err.stack || err);
     const errStatus = err.statusCode || 500;
     const errMsg = err.message || 'Something went wrong';
     res.status(errStatus).json({

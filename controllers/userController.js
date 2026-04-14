@@ -1,5 +1,5 @@
 const { MailNotSentError, BadUserRequestError, NotFoundError, UnAuthorizedError } =
-require('../middleware/errors')
+    require('../middleware/errors')
 require('dotenv').config();
 const _ = require('lodash')
 const bcrypt = require('bcrypt')
@@ -15,7 +15,7 @@ const {
     forgotPasswordValidator,
     resetPasswordValidator,
 } = require("../validators/userValidator");
-const {SENDMAIL, GETMAIL} = require('../utils/mailHandler');
+const { SENDMAIL, GETMAIL } = require('../utils/mailHandler');
 
 
 const userSignUp = async (req, res, next) => {
@@ -137,14 +137,51 @@ const portalRedirect = async (req, res) => {
     })
 }
 
-const sendMessage = async(req,res) => {
-    const {fullname, email, phone, subject, message} = req.body
-    await GETMAIL(fullname, email, phone, subject, message);
+const sendMessage = async (req, res) => {
+    try {
+        let { fullname, email, phone, subject, message } = req.body;
 
-    res.status(200).send("Message Sent!");
-}
+        // validation
+        if (!fullname || !email || !message) {
+            return res.status(400).json({
+                message: "Full name, email, and message are required"
+            });
+        }
 
-const userAuthenticated = async(req,res) => {
+        fullname = fullname.trim();
+        email = email.trim();
+        phone = phone ? phone.trim() : "";
+        subject = subject ? subject.trim() : `New Message from ${fullname}`;
+        message = message.trim();
+
+        // email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({
+                message: "Invalid email address"
+            });
+        }
+        const success = await GETMAIL(fullname, email, phone, subject, message);
+        if (!success) {
+            return res.status(500).json({
+                message: "Failed to send message. Please try again later."
+            });
+        }
+        return res.status(200).json({
+            message: "Message sent successfully"
+        });
+
+    } catch (error) {
+        console.error("Send Message Error:", error);
+
+        return res.status(500).json({
+            message: "Server error. Please try again later."
+        });
+    }
+};
+
+
+const userAuthenticated = async (req, res) => {
     res.status(200).send("Authenticated!");
 }
 
@@ -152,4 +189,4 @@ const userAuthenticated = async(req,res) => {
 
 
 
-module.exports = { userSignUp, userLogIn, forgotPassword, resetPassword, portalRedirect, getUserEmail, sendMessage, userAuthenticated}
+module.exports = { userSignUp, userLogIn, forgotPassword, resetPassword, portalRedirect, getUserEmail, sendMessage, userAuthenticated }

@@ -104,22 +104,35 @@ const SEND_NOTIFICATION_EMAIL = async (
 // ======================
 const GETMAIL = async (fullname, email, phone, subject, message) => {
     try {
+        console.log("👉 GETMAIL STARTED");
+
         const htmlContent = `
+            <p><strong>Message:</strong></p>
             <p>${message}</p>
+            <hr/>
+            <p><strong>Sender Details</strong></p>
+            <p><strong>Name:</strong> ${fullname}</p>
             <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Phone:</strong> ${phone}</p>
+            <p><strong>Phone:</strong> ${phone || "N/A"}</p>
         `;
 
         const response = await resend.emails.send({
-            from: `${fullname} <${email}>`,
-            to: process.env.EMAIL_USER,
-            subject: subject,
+            from: `Riyad Madrasah <contact@${process.env.EMAIL_USER}>`,
+            to: process.env.GETMAIL_USER,
+            replyTo: email,
+            subject,
             html: htmlContent
         });
 
-        console.log("Email sent:", response);
+        if (response.error) {
+            console.log("RESEND ERROR:", response.error);
+            return false;
+        }
+        return true;
+
     } catch (error) {
-        console.log("Email not sent:", error);
+        console.log("RESEND EXCEPTION:", error);
+        return false;
     }
 };
 
@@ -130,88 +143,4 @@ module.exports = { SENDMAIL, GETMAIL, SEND_NOTIFICATION_EMAIL };
 
 
 
-// const nodemailer = require("nodemailer");
-
-
-// const SENDMAIL = async (email, subject, text) => {
-//     try {
-//         let mailTransporter =
-//             nodemailer.createTransport(
-//                 {
-//                     service: "Gmail",
-//                     name: 'gmail.com',
-//                     host: "smtp.gmail.com",
-//                     port: 465,
-//                     secure: true,
-//                     auth: {
-//                         user: process.env.EMAIL_USER,
-//                         pass: process.env.USER_PASSWORD,
-//                     }
-//                 }
-//             );
-
-//         let mailDetails = {
-//             from: process.env.EMAIL_USER,
-//             to: email,
-//             subject: subject,
-//             text: `\nPlease click on the link below to reset your password \nNote that the link expires in one hour\n\n${text}`
-//         };
-
-//         mailTransporter
-//             .sendMail(mailDetails,
-//                 function (err, data) {
-//                     if (err) {
-//                         console.log('Error Occurs');
-//                     } else {
-//                         console.log('Email sent successfully');
-//                     }
-//                 });
-//     } catch (error) {
-//         console.log(error, "email not sent");
-//     }
-// };
-
-
-// const GETMAIL = async (fullname, email, phone, subject, message) => {
-//     try {
-//         let mailTransporter =
-//             nodemailer.createTransport(
-//                 {
-//                     service: "Gmail",
-//                     name: 'gmail.com',
-//                     host: "smtp.gmail.com",
-//                     port: 465,
-//                     secure: true,
-//                     auth: {
-//                         user: process.env.EMAIL_USER,
-//                         pass: process.env.USER_PASSWORD,
-//                     }
-//                 }
-//             );
-//         console.log(email)
-//         let mailDetails = {
-//             from: {
-//                 name: fullname,
-//                 address: email
-//             },
-//             to: process.env.EMAIL_USER,
-//             subject: subject,
-//             text: `${message} \n\nEmail: ${email} \n\nPhone: ${phone}`
-//         };
-
-//         mailTransporter
-//             .sendMail(mailDetails,
-//                 function (err, data) {
-//                     if (err) {
-//                         console.log('Error Occurs');
-//                     } else {
-//                         console.log('Email sent successfully');
-//                     }
-//                 });
-//     } catch (error) {
-//         console.log(error, "email not sent");
-//     }
-// };
-
-// module.exports = { SENDMAIL, GETMAIL }
 
