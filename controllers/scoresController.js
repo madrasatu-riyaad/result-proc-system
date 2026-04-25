@@ -445,9 +445,6 @@ const getScores = async (req, res, next) => {
     const programme = alreadyHasScores.programme;
     let teacherSignature;
 
-    // ======================
-    // CLASS DETAILS
-    // ======================
     const classmatch = await sClass.findOne({
       className,
       programme
@@ -455,11 +452,14 @@ const getScores = async (req, res, next) => {
     const termInfo = classmatch?.termlyDetails.find(
       t => t.sessionName === sessionName && t.termName === termName
     );
+    // Ensure term actually exists
+    if (!termInfo) {
+      throw new NotFoundError(
+        "Error: details not yet set for the term"
+      );
+    }
 
-    // ======================
-    // CURRENT TERM INFO (GLOBAL)
-    // ======================
-    if (programme == "children madrasah") {
+    if (programme == "children madrasah" || programme == "adult madrasah") {
       const current = await AttendanceTracker.findOne({ programme });
       if (!current) {
         throw new Error("Current term and session not yet set for programme");
@@ -470,24 +470,28 @@ const getScores = async (req, res, next) => {
       // ======================
       // RELEASE CHECK (parents & students only)
       // ======================
-      if (req.user.role === "student" || req.user.role === "parent") {
-        const isReleased = canViewResult(
-          sessionName,
-          termName,
-          termInfo?.released,
-          currentSession,
-          currentTerm
-        );
+      if (req.user.role === "student" || req.user.role === "parent" || req.user.other_role == "parent") {
 
-        if (isReleased === false) {
+        // Strict release enforcement (main protection)
+        if (termInfo.released !== true) {
           return res.status(403).json({
             status: "failed",
             message: "Results for this term have not been released yet"
           });
         }
 
+        const isReleased = canViewResult(
+          sessionName,
+          termName,
+          termInfo.released,
+          currentSession,
+          currentTerm
+        );
+
         if (isReleased === null) {
-          throw new NotFoundError("Error: no scores found for the term specified");
+          throw new NotFoundError(
+            "Error: no scores found for the term specified"
+          );
         }
       }
     }
