@@ -160,25 +160,41 @@ const uploadPropSignature = async (req, res, next) => {
 const addDetails = async (req, res, next) => {
   const { noInClass, termName, sessionName } = req.body;
   const { className, programme } = req.query;
+
   const classExists = await sClass.findOne({
-    $and:
-      [
-        { className },
-        { programme }
-      ]
-  })
-  if (!classExists) throw new NotFoundError("Error: the requested class does not exist");
-  classExists.termlyDetails.push({
-    sessionName,
-    termName,
-    noInClass,
-    classTeacherId: req.teacherId  //coming from the uploadImg middleware
-  })
-  classExists.save()
+    className,
+    programme
+  });
+  if (!classExists) {
+    throw new NotFoundError("Error: the requested class does not exist");
+  }
+
+  //  Check if term + session already exists
+  const existingTerm = classExists.termlyDetails.find(
+    (term) =>
+      term.termName === termName &&
+      term.sessionName === sessionName
+  );
+  if (existingTerm) {
+    // ✅ Update existing record
+    existingTerm.noInClass = noInClass;
+    existingTerm.classTeacherId = req.teacherId;
+  } else {
+    //  Add new record
+    classExists.termlyDetails.push({
+      sessionName,
+      termName,
+      noInClass,
+      classTeacherId: req.teacherId
+    });
+  }
+  await classExists.save();
 
   res.status(200).json({
     status: "Success",
-    message: "details added successfully",
+    message: existingTerm
+      ? "Details updated successfully"
+      : "Details added successfully",
     classExists
   });
 };

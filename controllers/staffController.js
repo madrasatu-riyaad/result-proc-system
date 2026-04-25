@@ -289,6 +289,7 @@ const updateStaff = async (req, res, next) => {
     .json({ status: "success", message: "Staffer information is up-to-date", staffer });
 };
 
+
 const deleteStaff = async (req, res, next) => {
   const { error } = deleteStaffValidator(req.body);
   if (error) throw error;
@@ -303,6 +304,7 @@ const deleteStaff = async (req, res, next) => {
   res.status(200).json({ status: "success", message: "Staff has been archived and details removed from user database" });
 };
 
+
 // set report card details for a programme
 const setDetails = async (req, res, next) => {
   const { programme } = req.query;
@@ -314,8 +316,10 @@ const setDetails = async (req, res, next) => {
     );
   }
 
-  const { maxAttendance, nextTermDate, sessionName, termName } = req.body;
-
+  const { maxAttendance, nextTermDate, carddetailsSession, carddetailsTerm } = req.body;
+    let sessionName = carddetailsSession;
+  let termName = carddetailsTerm;
+  
   // create or update card details
   let detailsExist = await CardDetails.findOne({ programme });
   if (!detailsExist) {
@@ -325,11 +329,10 @@ const setDetails = async (req, res, next) => {
     detailsExist.nextTermDate = nextTermDate;
     await detailsExist.save();
   }
-
   // RELEASE LOGIC: update all classes under this programme for this session and term
   const classes = await Class.find({ programme });
   for (const cls of classes) {
-    const term = cls.termlyDetails.find(
+       const term = cls.termlyDetails.find(
       (t) => t.sessionName === sessionName && t.termName === termName
     );
     if (term) {
