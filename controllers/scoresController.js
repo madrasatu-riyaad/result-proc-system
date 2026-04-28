@@ -310,7 +310,7 @@ const addScores = async (req, res, next) => {
     if (termName === 'third') calculateThirdTermCumulative(termData, { term: [] });
     else calculateTotals(termData);
 
-    scoreDoc.scores.push({ sessionName: req.body.sessionName, term: [termData] });
+    scoreDoc.scores.push({ sessionName: req.body.sessionName, className: req.body.className, term: [termData] });
     await scoreDoc.save();
     return res.status(201).json({ status: "success", scoreDoc, message: `${termName} term scores added` });
   }
