@@ -393,14 +393,14 @@ const getScores = async (req, res, next) => {
   // ======================
   // AUTH CHECKS
   // ======================
-  if (req.user.role == "admin") {
-    const isValidStaff = await Staff.findOne({ email: req.user.email });
-    if (isValidStaff.teacherProgramme != isStudent.programme) {
-      throw new UnAuthorizedError(
-        "Error: Sorry, you are not allowed to view scores for students of other programmes"
-      );
-    }
-  }
+  // if (req.user.role == "admin") {
+  //   const isValidStaff = await Staff.findOne({ email: req.user.email });
+  //   if (isValidStaff.teacherProgramme != isStudent.programme) {
+  //     throw new UnAuthorizedError(
+  //       "Error: Sorry, you are not allowed to view scores for students of other programmes"
+  //     );
+  //   }
+  // }
 
   if (req.user.role == "parent") {
     if (req.user.email != isStudent.parentEmail) {
