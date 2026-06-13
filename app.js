@@ -18,13 +18,10 @@ const newAttendanceRouter = require('./routers/newAttendanceRouter');
 const userRouter = require('./routers/userRouter');
 const assessmentRouter = require('./routers/assessmentRouter');
 const billingRouter = require('./routers/billingRouter');
-const attendanceTrackingRouter = require('./routers/attendanceTrackerRouter');
+
 
 const errorHandler = require('./middleware/errorHandler')
 
-// cron
-const { runAttendanceJob } = require("./cron/attendanceCron");
-require("./cron/heartbeat");
 
 // middleware
 app.use(express.json());
@@ -46,13 +43,6 @@ app.use('/api/v1/class', classRouter)
 app.use('/api/v1/assessment', assessmentRouter)
 app.use('/api/v1/attendance2', newAttendanceRouter)
 app.use('/api/v1/billing', billingRouter)
-app.use('/api/v1/attendancetracking', attendanceTrackingRouter)
-
-// ✅ HEALTH CHECK
-app.get("/health", (req, res) => {
-  console.log("🔥 Uptime ping:", new Date().toISOString());
-  res.status(200).send("OK");
-});
 
 
 // ❗ LAST
