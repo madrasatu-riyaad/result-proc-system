@@ -21,11 +21,6 @@ const addStudent = async (req, res, next) => {
   const { error } = newStudentValidation(req.body);
   if (error) throw error;
 
-  const isValidStaff = await Staff.findOne({ email: req.user.email })
-  if (isValidStaff.teacherProgramme != req.body.programme) {
-    throw new UnAuthorizedError("Error: Sorry, you are not allowed to add students of other programmes")
-  }
-
   if (req.body.email !== "nothing@nil.com") {
     const emailExists = await Student.findOne({ email: req.body.email });
     if (emailExists) throw new BadUserRequestError("Error: An account with this email already exists");
