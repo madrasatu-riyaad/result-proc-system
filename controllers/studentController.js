@@ -39,8 +39,7 @@ const addStudent = async (req, res, next) => {
     isStudent.userRole = "student";
     isStudent.save()
   }
-
-  const student = await Student.create(req.body);
+ const student = await Student.create(req.body);
   res.status(201).json({ status: "success", student, message: "Student added successfully" });
 };
 

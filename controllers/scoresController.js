@@ -384,23 +384,11 @@ const canViewResult = (sessionName, termName, released, currentSession, currentT
 
 
 const getScores = async (req, res, next) => {
-  const { admNo, termName, sessionName } = req.query;
+  const { admNo, termName, sessionName, className: inputClassName } = req.query;
   const isStudent = await Student.findOne({ admNo });
   if (!isStudent) {
     return next(new Error("Error: no such student found"));
   }
-
-  // ======================
-  // AUTH CHECKS
-  // ======================
-  // if (req.user.role == "admin") {
-  //   const isValidStaff = await Staff.findOne({ email: req.user.email });
-  //   if (isValidStaff.teacherProgramme != isStudent.programme) {
-  //     throw new UnAuthorizedError(
-  //       "Error: Sorry, you are not allowed to view scores for students of other programmes"
-  //     );
-  //   }
-  // }
 
   if (req.user.role == "parent") {
     if (req.user.email != isStudent.parentEmail) {
@@ -441,7 +429,20 @@ const getScores = async (req, res, next) => {
   // ======================
   for (let count = 0; count < result.length; count++) {
     if (sessionName != result[count].sessionName) continue;
-    const className = result[count].className;
+    let className = result[count].className;
+    // if className is not found in student record
+    if (!className) {
+      if (!inputClassName) {
+        return res.status(400).json({
+          status: "needs_classname",
+          message:
+            "Your class is not set. Please enter the class for which you are requesting the result."
+        });
+      }
+
+      className = inputClassName;
+    }
+
     const programme = alreadyHasScores.programme;
     let teacherSignature;
 
@@ -449,14 +450,13 @@ const getScores = async (req, res, next) => {
       className,
       programme
     });
-    const termInfo = classmatch?.termlyDetails.find(
+
+    let termInfo = classmatch?.termlyDetails.find(
       t => t.sessionName === sessionName && t.termName === termName
     );
-    // Ensure term actually exists
+
     if (!termInfo) {
-      throw new NotFoundError(
-        "Error: details not yet set for the term"
-      );
+      termInfo = {};
     }
 
     if (programme == "children madrasah" || programme == "adult madrasah") {
@@ -470,28 +470,31 @@ const getScores = async (req, res, next) => {
       // ======================
       // RELEASE CHECK (parents & students only)
       // ======================
-      if (req.user.role === "student" || req.user.role === "parent" || req.user.other_role == "parent") {
+      if (req.user.role === "student" ||req.user.role === "parent" ||req.user.other_role == "parent") {
 
-        // Strict release enforcement (main protection)
-        if (termInfo.released !== true) {
-          return res.status(403).json({
-            status: "failed",
-            message: "Results for this term have not been released yet"
-          });
-        }
+        // Only enforce release if term details exist
+        if (termInfo.released !== undefined) {
 
-        const isReleased = canViewResult(
-          sessionName,
-          termName,
-          termInfo.released,
-          currentSession,
-          currentTerm
-        );
+          if (termInfo.released !== true) {
+            return res.status(403).json({
+              status: "failed",
+              message: "Results for this term have not been released yet"
+            });
+          }
 
-        if (isReleased === null) {
-          throw new NotFoundError(
-            "Error: no scores found for the term specified"
+          const isReleased = canViewResult(
+            sessionName,
+            termName,
+            termInfo.released,
+            currentSession,
+            currentTerm
           );
+
+          if (isReleased === null) {
+            throw new NotFoundError(
+              "Error: no scores found for the term specified"
+            );
+          }
         }
       }
     }
