@@ -1,8 +1,9 @@
 const Attendance = require("../models/newAttendanceModel");
 const Staff = require("../models/staffModel");
 const Student = require("../models/studentModel");
+const AttendanceTracker = require("../models/attendanceTrackingModel");
 const { BadUserRequestError, NotFoundError, UnAuthorizedError } =
-require('../middleware/errors');
+    require('../middleware/errors');
 const { Parser } = require("json2csv");
 
 
@@ -78,6 +79,63 @@ const markAttendance = async (req, res, next) => {
 const getAttendance = async (req, res, next) => {
     const { className, programme, sessionName, termName } = req.query;
 
+    const tracker = await AttendanceTracker.findOne({
+        programme,
+        sessionName,
+        termName
+    });
+
+    if (!tracker) {
+        throw new NotFoundError(
+            `Attendance has not been configured for the ${programme} programme for ${termName} term (${sessionName}). Please click Attendance Tracker on the menu to set the required details before viewing the attendance report.`
+        );
+    }
+    // Optional safety check
+    if (!tracker.classes.includes(className)) {
+        throw new NotFoundError(
+            `The class "${className}" is not currently configured under the ${programme} programme. Please update the Attendance Tracker Configuration before viewing this report.`
+        );
+    }
+    const {
+        startDate,
+        endDate,
+        teachingDays
+    } = tracker;
+
+    const excludedDates = new Set(
+        (tracker.excludedDates || []).map(
+            date => new Date(date).toDateString()
+        )
+    );
+    // Array for sending to the frontend
+    const excludedDatesList = Array.from(excludedDates);
+
+    const expectedDates = [];
+    const current = new Date(startDate);
+
+    // Don't expect attendance beyond today
+    const today = new Date();
+
+    const last =
+        today < new Date(endDate)
+            ? today
+            : new Date(endDate);
+    while (current <= last) {
+        const dayName = current.toLocaleDateString("en-US", {
+            weekday: "long"
+        });
+
+        const dateString = new Date(current).toDateString();
+
+        if (
+            teachingDays.includes(dayName) &&
+            !excludedDates.has(dateString)
+        ) {
+            expectedDates.push(dateString);
+        }
+        current.setDate(current.getDate() + 1);
+    }
+
     // 1️⃣ Fetch attendance document
     const attendanceDoc = await Attendance.findOne({
         className,
@@ -89,7 +147,7 @@ const getAttendance = async (req, res, next) => {
     if (!attendanceDoc || !attendanceDoc.attendanceRecord.length) {
         return res.status(404).json({
             status: "Fail",
-            message: "No attendance found for this term"
+            message: `No attendance records have been entered for ${className} (${programme}) during the ${termName} term of the ${sessionName} session.`
         });
     }
 
@@ -98,8 +156,6 @@ const getAttendance = async (req, res, next) => {
     attendanceDoc.attendanceRecord.forEach(record => {
         Object.keys(record.attendance).forEach(admNo => admissionNumbers.add(admNo));
     });
-
-    // console.log("Attendance document admission numbers:", Array.from(admissionNumbers));
 
     // 3️⃣ Fetch students from Student collection
     const studentsData = await Student.find({
@@ -132,6 +188,18 @@ const getAttendance = async (req, res, next) => {
         .map(r => new Date(r.termdate).toDateString())
         .sort((a, b) => new Date(a) - new Date(b));
 
+    // compare recorded dates with expected dates
+    const recordedDates = new Set(dates);
+    const missingDates = expectedDates.filter(
+        date => !recordedDates.has(date)
+    );
+    const expectedDays = expectedDates.length;
+    const recordedDays = recordedDates.size;
+    const completion =
+        expectedDays === 0
+            ? 0
+            : Number(((recordedDays / expectedDays) * 100).toFixed(2));
+
     // 7️⃣ Build final array of students with attendance
     const studentsWithAttendance = Array.from(admissionNumbers).map(admNo => {
         const attendanceByDate = attendanceMap[admNo];
@@ -143,7 +211,7 @@ const getAttendance = async (req, res, next) => {
 
         return {
             admissionNumber: admNo,
-            student_name: studentMap[admNo] || "Unknown", // <-- full name
+            student_name: studentMap[admNo] || `Unknown Student (${admNo})`, // <-- full name
             attendanceByDate,
             attendancePercentage: totalDays === 0 ? 0 : Math.round((presentDays / totalDays) * 100)
         };
@@ -151,10 +219,108 @@ const getAttendance = async (req, res, next) => {
 
     return res.status(200).json({
         status: "Success",
+        attendanceSummary: {
+            studentCount: studentsWithAttendance.length,
+            expectedDays,
+            recordedDays,
+            missingDays: missingDates.length,
+            completion,
+            missingDates
+        },
+        excludedDates: excludedDatesList,
         dates,
         students: studentsWithAttendance
     });
 
+};
+
+
+const getAttendanceCalendar = async (req, res, next) => {
+    const { className, programme, sessionName, termName } = req.query;
+
+    const tracker = await AttendanceTracker.findOne({
+        programme,
+        sessionName,
+        termName
+    });
+
+    if (!tracker) {
+        throw new NotFoundError(
+            `Attendance has not been configured for the ${programme} programme for the ${termName} term (${sessionName}). Please open Attendance Configuration and set the required details before viewing the attendance report.`
+        );
+    }
+
+    // Ensure the class belongs to this programme
+    if (!tracker.classes.includes(className)) {
+        throw new NotFoundError(
+            `The class "${className}" is not currently configured under the ${programme} programme. Please update the Attendance Configuration before viewing this report.`
+        );
+    }
+    const {
+        startDate,
+        endDate,
+        teachingDays,
+        excludedDates = []
+    } = tracker;
+    const expectedDates = [];
+
+    const current = new Date(startDate);
+    const today = new Date();
+
+    // Don't generate dates beyond today or beyond the term end date
+    const last =
+        today < new Date(endDate)
+            ? today
+            : new Date(endDate);
+
+    while (current <= last) {
+        const dayName = current.toLocaleDateString("en-US", {
+            weekday: "long"
+        });
+
+        if (teachingDays.includes(dayName)) {
+            expectedDates.push(new Date(current));
+        }
+
+        current.setDate(current.getDate() + 1);
+    }
+
+    return res.status(200).json({
+        status: "Success",
+        expectedDates,
+        excludedDates
+    });
+};
+
+const markNonTeachingDays = async (req, res, next) => {
+    const {
+        programme,
+        sessionName,
+        termName,
+        excludedDates
+    } = req.body;
+
+    const tracker = await AttendanceTracker.findOne({
+        programme,
+        sessionName,
+        termName
+    });
+
+    if (!tracker) {
+        throw new NotFoundError(
+            "Attendance settings for this term were not found. Please configure attendance for the programme first."
+        );
+    }
+    tracker.excludedDates = excludedDates.map(
+        date => new Date(date)
+    );
+    await tracker.save();
+
+    return res.status(200).json({
+        status: "success",
+        message: "Non-teaching days updated successfully.",
+        excludedDates: tracker.excludedDates
+    });
 };
 
 
@@ -379,196 +545,113 @@ const deleteDayAttendance = async (req, res, next) => {
 };
 
 
-
-// const deleteTermAttendance = async (req, res, next) => {
-//     const { termName, sessionName, programme, className } = req.query;
-    
-//     // 1️⃣ Admin role check
-//     if (req.user.role === "admin") {
-//         const isValidStaff = await Staff.findOne({ email: req.user.email });
-//         if (!isValidStaff || isValidStaff.teacherProgramme !== programme) {
-//             throw new UnAuthorizedError(
-//                 "Error: You are not allowed to delete attendance for students of other programmes"
-//             );
-//         }
-//     }
-
-//     // 2️⃣ Fetch all attendance records for this class/programme/term/session
-//     const attendanceDocs = await Attendance.find({
-//         termName,
-//         sessionName,
-//         programme,
-//         className
-//     }).lean();
-
-//     if (attendanceDocs.length === 0) {
-//   return res.status(404).json({
-//     status: "Fail",
-//     message: "No attendance records found for this class/session/term/programme"
-//   });
-// }
-//     // 3️⃣ Collect all unique student admission numbers
-//     const studentSet = new Set();
-//     attendanceDocs.forEach(doc => {
-//         doc.attendanceRecord.forEach(record => {
-//             Object.keys(record.attendance).forEach(admNo => studentSet.add(admNo));
-//         });
-//     });
-//     const students = Array.from(studentSet).sort(); // sorted admission numbers
-    
-//     // 4️⃣ Prepare CSV rows (one row per date)
-//     const csvRows = [];
-//     // assuming attendance per class per date is unique, merge all docs
-//     const dateMap = {}; // { dateString: { admNo: Present/Absent } }
-
-//     attendanceDocs.forEach(doc => {
-//         doc.attendanceRecord.forEach(record => {
-//             const dateStr = normalizeDate(record.termdate).toISOString().split("T")[0]; // YYYY-MM-DD
-//             if (!dateMap[dateStr]) dateMap[dateStr] = {};
-//             Object.entries(record.attendance).forEach(([admNo, present]) => {
-//                 dateMap[dateStr][admNo] = present ? "Present" : "Absent";
-//             });
-//         });
-//     }); 
-
-//     Object.entries(dateMap).forEach(([dateStr, attendanceMap]) => {
-//         const row = { Date: dateStr };
-//         students.forEach(admNo => {
-//             row[admNo] = attendanceMap[admNo] || "Absent";
-//         });
-//         csvRows.push(row);
-//     });
-
-//     // 5️⃣ Convert rows to CSV
-//     const parser = new Parser({ fields: ["Date", ...students] });
-//     const csv = parser.parse(csvRows);
-
-//     // 6️⃣ Set headers for browser download
-//     const fileName = `AttendanceBackup_${className}_${programme}_${sessionName}_${termName}.csv`.replace(/\s+/g, "_");
-//     res.setHeader("Content-Type", "text/csv");
-//     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-//     res.setHeader("X-Filename", fileName);
-
-//     // 7️⃣ Delete attendance records after generating CSV
-//     await Attendance.deleteMany({
-//         className,
-//         programme,
-//         sessionName,
-//         termName
-//     });
-
-//     // 8️⃣ Send CSV to browser
-//     return res.send(csv);
-// };
-
-
 const deleteTermAttendance = async (req, res, next) => {
-  const { termName, sessionName, programme, className } = req.query;
+    const { termName, sessionName, programme, className } = req.query;
 
-  // 1️⃣ Admin permission check
-  if (req.user.role === "admin") {
-    const isValidStaff = await Staff.findOne({ email: req.user.email });
+    // 1️⃣ Admin permission check
+    if (req.user.role === "admin") {
+        const isValidStaff = await Staff.findOne({ email: req.user.email });
 
-    if (!isValidStaff || isValidStaff.teacherProgramme !== programme) {
-      throw new UnAuthorizedError(
-        "Error: You are not allowed to delete attendance for students of other programmes"
-      );
+        if (!isValidStaff || isValidStaff.teacherProgramme !== programme) {
+            throw new UnAuthorizedError(
+                "Error: You are not allowed to delete attendance for students of other programmes"
+            );
+        }
     }
-  }
 
-  // 2️⃣ Fetch attendance documents
-  const attendanceDoc = await Attendance.findOne({
-    termName: termName.trim(),
-    sessionName: sessionName.trim(),
-    programme: programme.trim(),
-    className: className.trim(),
-  }).lean();
+    // 2️⃣ Fetch attendance documents
+    const attendanceDoc = await Attendance.findOne({
+        termName: termName.trim(),
+        sessionName: sessionName.trim(),
+        programme: programme.trim(),
+        className: className.trim(),
+    }).lean();
 
-  if (!attendanceDoc || !attendanceDoc.attendanceRecord.length) {
-    return res.status(404).json({
-      status: "Fail",
-      message: "No attendance found for this term"
-    });
-  }
+    if (!attendanceDoc || !attendanceDoc.attendanceRecord.length) {
+        return res.status(404).json({
+            status: "Fail",
+            message: "No attendance found for this term"
+        });
+    }
 
-  // 3️⃣ Collect students and attendance
-  const students = new Set();
-  const dateMap = {};
+    // 3️⃣ Collect students and attendance
+    const students = new Set();
+    const dateMap = {};
 
-  attendanceDoc.forEach((doc) => {
-    if (!doc.attendanceRecord) return;
+    attendanceDoc.forEach((doc) => {
+        if (!doc.attendanceRecord) return;
 
-    doc.attendanceRecord.forEach((record) => {
-      const date = new Date(record.termdate)
-        .toISOString()
-        .split("T")[0];
+        doc.attendanceRecord.forEach((record) => {
+            const date = new Date(record.termdate)
+                .toISOString()
+                .split("T")[0];
 
-      if (!dateMap[date]) dateMap[date] = {};
+            if (!dateMap[date]) dateMap[date] = {};
 
-      Object.entries(record.attendance || {}).forEach(([admNo, present]) => {
-        students.add(admNo);
-        dateMap[date][admNo] = present ? "Present" : "Absent";
-      });
-    });
-  });
-
-  const studentList = Array.from(students).sort();
-
-  if (studentList.length === 0) {
-    return res.status(404).json({
-      status: "Fail",
-      message: "Attendance records contain no student data",
-    });
-  }
-
-  if (Object.keys(dateMap).length === 0) {
-    return res.status(404).json({
-      status: "Fail",
-      message: "Attendance records contain no dates",
-    });
-  }
-
-  // 4️⃣ Build CSV rows
-  const rows = [];
-
-  Object.keys(dateMap)
-    .sort()
-    .forEach((date) => {
-      const row = { Date: date };
-
-      studentList.forEach((admNo) => {
-        row[admNo] = dateMap[date][admNo] || "Absent";
-      });
-
-      rows.push(row);
+            Object.entries(record.attendance || {}).forEach(([admNo, present]) => {
+                students.add(admNo);
+                dateMap[date][admNo] = present ? "Present" : "Absent";
+            });
+        });
     });
 
-  // 5️⃣ Convert to CSV
-  const { Parser } = require("json2csv");
-  const parser = new Parser({ fields: ["Date", ...studentList] });
-  const csv = parser.parse(rows);
+    const studentList = Array.from(students).sort();
 
-  // 6️⃣ Prepare download
-  const fileName = `AttendanceBackup_${className}_${programme}_${sessionName}_${termName}.csv`
-    .replace(/\s+/g, "_");
+    if (studentList.length === 0) {
+        return res.status(404).json({
+            status: "Fail",
+            message: "Attendance records contain no student data",
+        });
+    }
 
-  res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-  res.setHeader("X-Filename", fileName);
+    if (Object.keys(dateMap).length === 0) {
+        return res.status(404).json({
+            status: "Fail",
+            message: "Attendance records contain no dates",
+        });
+    }
 
-  // 7️⃣ Delete attendance after backup
-  await Attendance.deleteMany({
-    termName,
-    sessionName,
-    programme,
-    className,
-  });
+    // 4️⃣ Build CSV rows
+    const rows = [];
 
-  // 8️⃣ Send CSV
-  return res.send(csv);
+    Object.keys(dateMap)
+        .sort()
+        .forEach((date) => {
+            const row = { Date: date };
+
+            studentList.forEach((admNo) => {
+                row[admNo] = dateMap[date][admNo] || "Absent";
+            });
+
+            rows.push(row);
+        });
+
+    // 5️⃣ Convert to CSV
+    const { Parser } = require("json2csv");
+    const parser = new Parser({ fields: ["Date", ...studentList] });
+    const csv = parser.parse(rows);
+
+    // 6️⃣ Prepare download
+    const fileName = `AttendanceBackup_${className}_${programme}_${sessionName}_${termName}.csv`
+        .replace(/\s+/g, "_");
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("X-Filename", fileName);
+
+    // 7️⃣ Delete attendance after backup
+    await Attendance.deleteMany({
+        termName,
+        sessionName,
+        programme,
+        className,
+    });
+
+    // 8️⃣ Send CSV
+    return res.send(csv);
 };
 
 
 
 
-module.exports = { markAttendance, getAttendance, getOneAttendance, editAttendanceDate, editAttendanceStatus, deleteDayAttendance, deleteTermAttendance }
+module.exports = { markAttendance, getAttendance, getOneAttendance, editAttendanceDate, editAttendanceStatus, deleteDayAttendance, deleteTermAttendance, markNonTeachingDays, getAttendanceCalendar }

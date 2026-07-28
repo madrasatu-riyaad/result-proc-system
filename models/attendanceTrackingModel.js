@@ -18,6 +18,10 @@ const attendanceTrackingSchema = new mongoose.Schema(
 
     teachingDays: [String],
 
+    excludedDates: [{
+      type: Date
+    }],
+
     reminders: {
       firstReminder: String,
       breakTime: String,
