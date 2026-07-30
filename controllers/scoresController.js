@@ -72,32 +72,64 @@ const calculateTotals = (term) => {
 };
 
 const calculateThirdTermCumulative = (termData, session) => {
-  let noOfTerms = 1;
-  let firstTermScore = [];
-  let secondTermScore = [];
-
   const firstTerm = session.term.find(t => t.termName === "first");
   const secondTerm = session.term.find(t => t.termName === "second");
 
-  termData.subjects.forEach((subject, i) => {
-    firstTermScore[0] = firstTerm?.subjects.find(s => s.subjectName === subject.subjectName)?.totalScore || 0;
-    secondTermScore[0] = secondTerm?.subjects.find(s => s.subjectName === subject.subjectName)?.totalScore || 0;
+  termData.subjects.forEach(subject => {
+    const firstScore =
+      firstTerm?.subjects.find(
+        s => s.subjectName === subject.subjectName
+      )?.totalScore || 0;
+    const secondScore =
+      secondTerm?.subjects.find(
+        s => s.subjectName === subject.subjectName
+      )?.totalScore || 0;
+    let noOfTerms = 0;
 
-    if ((firstTermScore[0] !== 0 && secondTermScore[0] === 0) || (firstTermScore[0] === 0 && secondTermScore[0] !== 0)) noOfTerms = 2;
-    else if (firstTermScore[0] !== 0 && secondTermScore[0] !== 0) noOfTerms = 3;
+    if (+firstScore > 0) noOfTerms++;
+    if (+secondScore > 0) noOfTerms++;
+    if (+subject.totalScore > 0) noOfTerms++;
 
-    subject.cumulativeScore = +subject.totalScore + (+firstTermScore[0]) + (+secondTermScore[0]);
-    subject.cumulativeAverage = subject.cumulativeScore / noOfTerms;
+    subject.cumulativeScore =
+      (+subject.totalScore) +
+      (+firstScore) +
+      (+secondScore);
+    subject.cumulativeAverage =
+      noOfTerms > 0
+        ? subject.cumulativeScore / noOfTerms
+        : 0;
   });
 
-  termData.grandTotal = termData.subjects.length * 100;
-  termData.marksObtained = termData.subjects.reduce((acc, s) => acc + (+s.cumulativeAverage), 0);
-  termData.avgPercentage = (termData.marksObtained / termData.grandTotal) * 100;
+  const assessedSubjects = termData.subjects.filter(
+    s => (+s.testScore > 0 || +s.examScore > 0)
+  );
+  termData.grandTotal = assessedSubjects.length * 100;
+  termData.marksObtained = termData.subjects.reduce(
+    (acc, s) => acc + (+s.cumulativeAverage || 0),
+    0
+  );
+  termData.avgPercentage =
+    termData.grandTotal > 0
+      ? (termData.marksObtained / termData.grandTotal) * 100
+      : 0;
 };
+
 
 const addScores = async (req, res, next) => {
   const termName = req.body.term.termName;
   const { admNo } = req.query;
+
+  // to remove later
+  console.log("========== SCORE ENTRY ==========");
+  console.log({
+    teacher: req.user?.email || req.user?._id,
+    student: admNo,
+    session: req.body.sessionName,
+    className: req.body.className,
+    term: termName,
+    subjects: req.body.term.subjects
+  });
+  console.log("=================================");
 
   // Check student exists
   const student = await Student.findOne({ admNo });
@@ -722,24 +754,43 @@ const updateScores = async (req, res, next) => {
     const firstScore = firstTerm?.subjects.find(s => s.subjectName === reqSubject.subjectName)?.totalScore || 0;
     const secondScore = secondTerm?.subjects.find(s => s.subjectName === reqSubject.subjectName)?.totalScore || 0;
 
-    let noOfTerms = 1;
-    if (firstScore && secondScore) noOfTerms = 3;
-    else if (firstScore || secondScore) noOfTerms = 2;
+    let noOfTerms = 0;
+    if (firstScore > 0) noOfTerms++;
+    if (secondScore > 0) noOfTerms++;
+    if (subject.totalScore > 0) noOfTerms++;
+    // backup safety measure preventing division by zero
+    if (noOfTerms === 0) {
+      noOfTerms = 1;
+    }
 
     subject.cumulativeScore = subject.totalScore + firstScore + secondScore;
     subject.cumulativeAverage = subject.cumulativeScore / noOfTerms;
   }
 
+
   // 9️⃣ Recalculate totals for term
-  term.grandTotal = term.subjects.length * 100;
+
+  const assessedSubjects = term.subjects.filter(
+    s => (s.testScore > 0 || s.examScore > 0)
+  );
+  term.grandTotal = assessedSubjects.length * 100;
 
   if (termName === "third") {
-    term.marksObtained = term.subjects.reduce((acc, s) => acc + (s.cumulativeAverage || 0), 0);
+    term.marksObtained = assessedSubjects.reduce(
+      (acc, s) => acc + (s.cumulativeAverage || 0),
+      0
+    );
   } else {
-    term.marksObtained = term.subjects.reduce((acc, s) => acc + (s.totalScore || 0), 0);
+    term.marksObtained = assessedSubjects.reduce(
+      (acc, s) => acc + (s.totalScore || 0),
+      0
+    );
   }
 
-  term.avgPercentage = (term.marksObtained / term.grandTotal) * 100;
+  term.avgPercentage =
+    term.grandTotal > 0
+      ? (term.marksObtained / term.grandTotal) * 100
+      : 0;
 
   // 🔟 Save
   await alreadyHasScores.save();
