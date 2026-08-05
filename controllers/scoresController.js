@@ -102,7 +102,7 @@ const calculateThirdTermCumulative = (termData, session) => {
   });
 
   const assessedSubjects = termData.subjects.filter(
-    s => (+s.testScore > 0 || +s.examScore > 0)
+    s => (+s.cumulativeScore > 0)
   );
   termData.grandTotal = assessedSubjects.length * 100;
   termData.marksObtained = termData.subjects.reduce(
@@ -120,17 +120,18 @@ const addScores = async (req, res, next) => {
   const termName = req.body.term.termName;
   const { admNo } = req.query;
 
-  // to remove later
-  console.log("========== SCORE ENTRY ==========");
-  console.log({
-    teacher: req.user?.email || req.user?._id,
-    student: admNo,
-    session: req.body.sessionName,
-    className: req.body.className,
-    term: termName,
-    subjects: req.body.term.subjects
-  });
-  console.log("=================================");
+  // to check teacher who entered scores
+  // console.log("========== SCORE ENTRY ==========");
+  // console.log({
+  //   teacher: req.user?.email || req.user?._id,
+  //   student: admNo,
+  //   session: req.body.sessionName,
+  //   className: req.body.className,
+  //   term: termName,
+  //   subjects: req.body.term.subjects
+  // });
+  // console.log("=================================");
+
 
   // Check student exists
   const student = await Student.findOne({ admNo });
@@ -755,10 +756,10 @@ const updateScores = async (req, res, next) => {
   );
 
   if (!subject) {
-  throw new BadUserRequestError(
-    `Subject "${reqSubject.subjectName}" was not found in the ${termName} term for this student.`
-  );
-}
+    throw new BadUserRequestError(
+      `Subject "${reqSubject.subjectName}" was not found in the ${termName} term for this student.`
+    );
+  }
 
   // 6️⃣ Update raw scores only
   subject.testScore = Number(reqSubject.testScore) || 0;
