@@ -18,6 +18,10 @@ const classSchema = new mongoose.Schema({
             type: Number,
             maxlength: [3, 'please check the number you entered']
         },
+        numberOfSubjects: {
+            type: Number,
+            min: 1
+        },
         classTeacherId: {
             type: mongoose.Types.ObjectId,
             ref: "Staff",

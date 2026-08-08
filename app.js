@@ -18,6 +18,7 @@ const newAttendanceRouter = require('./routers/newAttendanceRouter');
 const userRouter = require('./routers/userRouter');
 const assessmentRouter = require('./routers/assessmentRouter');
 const billingRouter = require('./routers/billingRouter');
+const attendanceTrackingRouter = require('./routers/attendanceTrackerRouter');
 
 
 const errorHandler = require('./middleware/errorHandler')
@@ -43,6 +44,7 @@ app.use('/api/v1/class', classRouter)
 app.use('/api/v1/assessment', assessmentRouter)
 app.use('/api/v1/attendance2', newAttendanceRouter)
 app.use('/api/v1/billing', billingRouter)
+app.use('/api/v1/attendancetracking', attendanceTrackingRouter)
 
 
 // ❗ LAST
