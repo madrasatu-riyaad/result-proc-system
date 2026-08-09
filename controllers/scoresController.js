@@ -668,179 +668,242 @@ const getScoresBySession = async (req, res, next) => {
 
 
 const getClassScores = async (req, res, next) => {
-  const { className, termName, sessionName, programme } = req.query;
+    const {
+        className,
+        termName,
+        sessionName,
+        programme
+    } = req.query;
 
-  let classExists = [];
-  let unscoredStudents = [];
+    let classExists = [];
+    let unscoredStudents = [];
 
-  const classRequest = await sClass.findOne({
-    className,
-    programme
-  });
-
-  if (!classRequest)
-    throw new NotFoundError("Error: the requested class does not exist");
-
-  const classSubjects = classRequest.subjects;
-
-  // Get ALL students in class (source of truth)
-  const allStudents = await Student.find({
-    programme,
-    presentClass: className
-  });
-
-  if (allStudents.length === 0)
-    throw new NotFoundError("No students found in this class");
-
-  // Get score documents
-  const detailsFound = await Score.find({
-    programme,
-    "scores.className": className,
-    "scores.sessionName": sessionName,
-  });
-
-  // If no scores at all
-  if (detailsFound.length === 0) {
-    for (let student of allStudents) {
-      if (student.studentStatus !== "past") {
-        unscoredStudents.push(student);
-      }
-    }
-
-    return res.status(200).json({
-      status: "success",
-      message: "No scores have been recorded yet for this class",
-      classExists: [],
-      unscoredStudents,
-      unscoredCount: unscoredStudents.length,
-      classSubjects,
+    // ==============================
+    // 1. FIND CLASS
+    // ==============================
+    const classRequest = await sClass.findOne({
+        className,
+        programme
     });
-  }
 
-  const scoredStudentIds = new Set();
-
-  // Extract scored students for this term
-  for (let n = 0; n < detailsFound.length; n++) {
-    const requestedclass = detailsFound[n].scores.find(
-      s => s.sessionName == sessionName && s.className == className
-    );
-
-    if (!requestedclass) continue;
-
-    const requestedterm = requestedclass.term.find(
-      t => t.termName == termName
-    );
-
-    if (requestedterm) {
-      scoredStudentIds.add(String(detailsFound[n].studentId));
-
-      // ✅ KEEP FULL SCORE DOCUMENT STRUCTURE (your requirement)
-      classExists.push({
-        ...detailsFound[n]._doc,
-        term: requestedterm       // ensure correct term only
-      });
-    }
-  }
-
-  if (classExists.length === 0) {
-    throw new NotFoundError(
-      `No ${termName} term scores recorded for this class`
-    );
-  }
-
-  // Build unscored students list
-  for (let student of allStudents) {
-    if (
-      student.studentStatus !== "past" &&
-      !scoredStudentIds.has(String(student._id))
-    ) {
-      unscoredStudents.push(student);
-    }
-  }
-
-  // ================= Attendance Summary =================
-  let attendanceSummary = null;
-
-  const tracker = await AttendanceTracker.findOne({
-    programme,
-    sessionName,
-    termName,
-  });
-
-  if (tracker) {
-    const excludedDates = new Set(
-      (tracker.excludedDates || []).map(date =>
-        new Date(date).toDateString()
-      )
-    );
-
-    const expectedDates = [];
-    const current = new Date(tracker.startDate);
-
-    const today = new Date();
-    const last =
-      today < new Date(tracker.endDate)
-        ? today
-        : new Date(tracker.endDate);
-
-    while (current <= last) {
-      const dayName = current.toLocaleDateString("en-US", {
-        weekday: "long",
-      });
-
-      const dateString = current.toDateString();
-
-      if (
-        tracker.teachingDays.includes(dayName) &&
-        !excludedDates.has(dateString)
-      ) {
-        expectedDates.push(dateString);
-      }
-
-      current.setDate(current.getDate() + 1);
-    }
-
-    const attendanceDoc = await Attendance.findOne({
-      className,
-      programme,
-      sessionName,
-      termName,
-    }).lean();
-
-    const recordedDates = attendanceDoc
-      ? new Set(
-        attendanceDoc.attendanceRecord.map(record =>
-          new Date(record.termdate).toDateString()
-        )
-      )
-      : new Set();
-
-    const expectedDays = expectedDates.length;
-    const recordedDays = recordedDates.size;
-
-    const completion =
-      expectedDays === 0
-        ? 0
-        : Number(
-          ((recordedDays / expectedDays) * 100).toFixed(2)
+    if (!classRequest)
+        throw new NotFoundError(
+            "Error: the requested class does not exist"
         );
 
-    attendanceSummary = {
-      expectedDays,
-      recordedDays,
-      completion,
-    };
-  }
+    const classSubjects = classRequest.subjects;
 
-  return res.status(200).json({
-    status: "success",
-    message: "successful",
-    classExists,
-    unscoredStudents,
-    unscoredCount: unscoredStudents.length,
-    classSubjects,
-    attendanceSummary,
-  });
+    // ==============================
+    // 2. GET SCORE DOCUMENTS FOR
+    //    REQUESTED CLASS + SESSION
+    // ==============================
+    const detailsFound = await Score.find({
+        programme,
+        "scores.className": className,
+        "scores.sessionName": sessionName,
+    });
+
+    // ==============================
+    // 3. NO SCORE DOCUMENTS
+    // ==============================
+    if (detailsFound.length === 0) {
+        return res.status(200).json({
+            status: "success",
+            message: "No scores have been recorded yet for this class",
+            classExists: [],
+            unscoredStudents: [],
+            unscoredCount: 0,
+            classSubjects,
+        });
+    }
+
+    // ==============================
+    // 4. IDENTIFY STUDENTS WHO
+    //    BELONGED TO THIS CLASS/SESSION
+    // ==============================
+    const historicalStudentIds = new Set();
+    const scoredStudentIds = new Set();
+
+    for (const score of detailsFound) {
+
+        const requestedClass = score.scores.find(
+            s =>
+                s.sessionName === sessionName &&
+                s.className === className
+        );
+
+        if (!requestedClass) continue;
+
+        const studentId = String(score.studentId);
+
+        // This student belonged to this class/session
+        historicalStudentIds.add(studentId);
+
+        // Check whether the requested term exists
+        const requestedTerm = requestedClass.term.find(
+            t => t.termName === termName
+        );
+
+        if (requestedTerm) {
+
+            scoredStudentIds.add(studentId);
+
+            // Keep full score document structure
+            // but attach only the requested term
+            classExists.push({
+                ...score._doc,
+                term: requestedTerm
+            });
+        }
+    }
+
+    // ==============================
+    // 5. GET STUDENT DETAILS FOR
+    //    HISTORICAL CLASS ROSTER
+    // ==============================
+    const historicalStudents = await Student.find({
+        _id: {
+            $in: [...historicalStudentIds]
+        }
+    });
+
+    // ==============================
+    // 6. BUILD UNSCORED STUDENTS
+    // ==============================
+    for (const student of historicalStudents) {
+
+        if (
+            student.studentStatus !== "past" &&
+            !scoredStudentIds.has(String(student._id))
+        ) {
+            unscoredStudents.push(student);
+        }
+    }
+
+    // ==============================
+    // 7. IF CLASS EXISTS BUT
+    //    REQUESTED TERM HAS NO SCORES
+    // ==============================
+    if (classExists.length === 0) {
+
+        return res.status(200).json({
+            status: "success",
+            message:
+                `No ${termName} term scores recorded for this class`,
+            classExists: [],
+            unscoredStudents,
+            unscoredCount: unscoredStudents.length,
+            classSubjects,
+        });
+    }
+
+    // ==============================
+    // 8. ATTENDANCE SUMMARY
+    // ==============================
+    let attendanceSummary = null;
+
+    const tracker = await AttendanceTracker.findOne({
+        programme,
+        sessionName,
+        termName,
+    });
+
+    if (tracker) {
+
+        const excludedDates = new Set(
+            (tracker.excludedDates || []).map(
+                date => new Date(date).toDateString()
+            )
+        );
+
+        const expectedDates = [];
+        const current = new Date(tracker.startDate);
+
+        const today = new Date();
+
+        const last =
+            today < new Date(tracker.endDate)
+                ? today
+                : new Date(tracker.endDate);
+
+        while (current <= last) {
+
+            const dayName =
+                current.toLocaleDateString("en-US", {
+                    weekday: "long",
+                });
+
+            const dateString =
+                current.toDateString();
+
+            if (
+                tracker.teachingDays.includes(dayName) &&
+                !excludedDates.has(dateString)
+            ) {
+                expectedDates.push(dateString);
+            }
+
+            current.setDate(
+                current.getDate() + 1
+            );
+        }
+
+        const attendanceDoc =
+            await Attendance.findOne({
+                className,
+                programme,
+                sessionName,
+                termName,
+            }).lean();
+
+        const recordedDates = attendanceDoc
+            ? new Set(
+                attendanceDoc.attendanceRecord.map(
+                    record =>
+                        new Date(
+                            record.termdate
+                        ).toDateString()
+                )
+            )
+            : new Set();
+
+        const expectedDays =
+            expectedDates.length;
+
+        const recordedDays =
+            recordedDates.size;
+
+        const completion =
+            expectedDays === 0
+                ? 0
+                : Number(
+                    (
+                        (recordedDays /
+                            expectedDays) *
+                        100
+                    ).toFixed(2)
+                );
+
+        attendanceSummary = {
+            expectedDays,
+            recordedDays,
+            completion,
+        };
+    }
+
+    // ==============================
+    // 9. RETURN RESULT
+    // ==============================
+    return res.status(200).json({
+        status: "success",
+        message: "successful",
+        classExists,
+        unscoredStudents,
+        unscoredCount:
+            unscoredStudents.length,
+        classSubjects,
+        attendanceSummary,
+    });
 };
 
 
