@@ -4,6 +4,7 @@ const Staff = require("../models/staffModel");
 const User = require("../models/userModel");
 const Score = require("../models/scoreModel");
 const Attendance = require("../models/newAttendanceModel");
+const AttendanceTracker = require("../models/attendanceTrackingModel"); // 
 const Billing = require("../models/billingsModel");
 const {
   newStudentValidation,
@@ -391,26 +392,49 @@ const promoteStudents = async (req, res, next) => {
   res.status(200).json({ status: "success", message: "Students have been successfully promoted" });
 };
 
+
 const promoteOneStudent = async (req, res, next) => {
+
   const { admNo, programme, promotionChoice, sessionName } = req.body;
 
   const student = await Student.findOne({ admNo })
+
   const isValidStaff = await Staff.findOne({ email: req.user.email })
+
   if (isValidStaff.role != "superadmin") {
+
     if (isValidStaff.teacherProgramme != student.programme) {
+
       throw new UnAuthorizedError("Error: Sorry, you cannot promote a student of another programme")
+
     }
+
   }
+
   if (!student) throw new NotFoundError("Error: no such student found");
+
+
+  // ⭐ ADDED: Remember the student's old class before promotion
+  const oldAttendanceClass = student.presentClass;
+
+
   if (promotionChoice == "merit") {
+
     const alreadyHasScores = await Score.findOne({ studentId: student._id })
+
     if (!alreadyHasScores) throw new NotFoundError("Error: no scores registered for this student");
+
     else {
+
       let result = alreadyHasScores.scores
+
       for (let count = 0; count < result.length; count++) {
+
         if (sessionName == result[count].sessionName) {
+
           let className = result[count].className
-          switch (className) { // move student to the next class by changing the className of the session
+
+          switch (className) {
             case "tamhidi":
               result[count].className = "hadoonah"
               break;
@@ -453,10 +477,10 @@ const promoteOneStudent = async (req, res, next) => {
             case "thaalith mutawasith":
               result[count].className = "thaalith mutawasith"
               break;
-            // default:  
           }
         }
       }
+
       await alreadyHasScores.save()
     }
   }
@@ -515,108 +539,260 @@ const promoteOneStudent = async (req, res, next) => {
       break;
     default: throw new BadUserRequestError("Error: There was an error promoting this student");
   }
+
   student.classStatus = "promoted";
+
   if (student.programme == "barnamij" && student.presentClass == "thaalith idaadiy") {
     student.studentStatus = "past";
     student.presentClass = "thaani idaadiy"
   }
+
   if (student.programme == "barnamij" && student.presentClass == "thaalith ibtidaahiy") {
     student.presentClass = "awwal idaadiy"
   }
+
   if (student.programme == "female madrasah" && student.presentClass == "awwal idaadiy") {
     student.presentClass = "awwal mutawasith"
   }
+
   if ((student.programme == "adult madrasah") && student.presentClass == "thaalith idaadiy") {
     student.presentClass = "al-awwal a-thaanawiy"
     student.studentStatus = "current"
   }
+
+  // ============================================================
+  // ⭐ ADDED: MOVE THIS STUDENT'S CURRENT-TERM ATTENDANCE
+  // ============================================================
+
+  const newAttendanceClass = student.presentClass;
+
+  if (newAttendanceClass != "past") {
+
+    const current = await AttendanceTracker.findOne({
+      programme: student.programme,
+      isCurrent: true
+    });
+
+    if (current) {
+
+      const oldAttendance = await Attendance.findOne({
+        programme: student.programme,
+        sessionName: current.currentSessionName,
+        termName: current.currentTermName,
+        className: oldAttendanceClass
+      });
+
+      if (oldAttendance) {
+
+        let newAttendance = await Attendance.findOne({
+          programme: student.programme,
+          sessionName: current.currentSessionName,
+          termName: current.currentTermName,
+          className: newAttendanceClass
+        });
+
+        if (!newAttendance) {
+
+          newAttendance = new Attendance({
+            programme: student.programme,
+            sessionName: current.currentSessionName,
+            termName: current.currentTermName,
+            className: newAttendanceClass,
+            attendanceRecord: []
+          });
+
+        }
+
+        const studentId = student._id.toString();
+
+        for (const oldRecord of oldAttendance.attendanceRecord) {
+
+          if (oldRecord.attendance && oldRecord.attendance.has(studentId)) {
+
+            let newRecord = newAttendance.attendanceRecord.find(
+              record =>
+                record.termdate.getTime() === oldRecord.termdate.getTime()
+            );
+
+            if (!newRecord) {
+
+              newRecord = {
+                termdate: oldRecord.termdate,
+                attendance: new Map()
+              };
+
+              newAttendance.attendanceRecord.push(newRecord);
+            }
+
+            // Copy the exact value: true OR false
+            newRecord.attendance.set(
+              studentId,
+              oldRecord.attendance.get(studentId)
+            );
+
+            // Remove only this student from the old class
+            oldRecord.attendance.delete(studentId);
+          }
+        }
+
+        await newAttendance.save();
+        await oldAttendance.save();
+      }
+    }
+  }
+
+  // ============================================================
+  // ⭐ END OF ADDED ATTENDANCE CODE
+  // ============================================================
+
   await student.save()
 
-  res.status(200).json({ status: "success", message: "Student has been successfully promoted" });
+  res.status(200).json({
+    status: "success",
+    message: `${student.firstName} ${student.lastName} (${student.admNo}) has been promoted to ${student.presentClass}`
+  });
 };
 
+
 const demoteStudent = async (req, res, next) => {
+
   const { admNo, programme } = req.body;
 
-  const theStudent = await Student.findOne({ admNo })
-  const isValidStaff = await Staff.findOne({ email: req.user.email })
-  if (isValidStaff.teacherProgramme != theStudent.programme) {
-    throw new UnAuthorizedError("Error: Sorry, you cannot demote a student of another programme")
+  const student = await Student.findOne({ admNo });
+
+  if (!student) {
+    throw new NotFoundError("Error: no such student found");
   }
-  const student = await Student.findOne({ admNo })
-  if (!student) throw new NotFoundError("Error: no such student found");
+
+  const isValidStaff = await Staff.findOne({ email: req.user.email });
+
+  if (!isValidStaff) {
+    throw new UnAuthorizedError("Error: staff account not found");
+  }
+
+  if (
+    isValidStaff.role != "superadmin" &&
+    isValidStaff.teacherProgramme != student.programme
+  ) {
+    throw new UnAuthorizedError(
+      "Error: Sorry, you cannot demote a student of another programme"
+    );
+  }
 
   switch (student.presentClass) {
+
     case "hadoonah":
-      student.presentClass = "tamhidi"
+      student.presentClass = "tamhidi";
       break;
+
     case "rawdoh":
-      student.presentClass = "hadoonah"
+      student.presentClass = "hadoonah";
       break;
+
     case "awwal ibtidaahiy":
-      student.presentClass = "rawdoh"
+      student.presentClass = "rawdoh";
       break;
+
     case "thaani ibtidaahiy":
-      student.presentClass = "awwal ibtidaahiy"
+      student.presentClass = "awwal ibtidaahiy";
       break;
+
     case "thaalith ibtidaahiy":
-      student.presentClass = "thaani ibtidaahiy"
+      student.presentClass = "thaani ibtidaahiy";
       break;
+
     case "raabi ibtidaahiy":
-      student.presentClass = "thaalith ibtidaahiy"
+      student.presentClass = "thaalith ibtidaahiy";
       break;
+
     case "khaamis ibtidaahiy":
-      student.presentClass = "raabi ibtidaahiy"
+      student.presentClass = "raabi ibtidaahiy";
       break;
+
     case "awwal idaadiy":
-      student.presentClass = "khaamis ibtidaahiy"
+      student.presentClass = "khaamis ibtidaahiy";
       break;
+
     case "thaani idaadiy":
-      student.presentClass = "awwal idaadiy"
+      student.presentClass = "awwal idaadiy";
       break;
+
     case "thaalith idaadiy":
       student.presentClass = "thaani idaadiy";
       break;
+
     case "awwal mutawasith":
-      student.presentClass = "khaamis ibtidaahiy"
+      student.presentClass = "khaamis ibtidaahiy";
       break;
+
     case "thaani mutawasith":
-      student.presentClass = "awwal mutawasith"
+      student.presentClass = "awwal mutawasith";
       break;
+
     case "thaalith mutawasith":
-      student.presentClass = "thaani mutawasith"
+      student.presentClass = "thaani mutawasith";
       break;
+
     case "al-awwal a-thaanawiy":
-      student.presentClass = "thaalith idaadiy"
+      student.presentClass = "thaalith idaadiy";
       break;
+
     case "a-thaani a-thaanawiy":
-      student.presentClass = "al-awwal a-thaanawiy"
+      student.presentClass = "al-awwal a-thaanawiy";
       break;
+
     case "a-thaalith a-thaanawiy":
-      student.presentClass = "a-thaani a-thaanawiy"
-      student.studentStatus = "current"
+      student.presentClass = "a-thaani a-thaanawiy";
+      student.studentStatus = "current";
       break;
-    default: throw new BadUserRequestError("Error: There was an error demoting this student")
+
+    default:
+      throw new BadUserRequestError(
+        "Error: There was an error demoting this student"
+      );
   }
 
-  if (student.programme == "barnamij" && student.presentClass == "thaani idaadiy") {
-    student.studentStatus = "current"
-  }
-  if (student.programme == "barnamij" && student.presentClass == "awwal idaadiy") {
-    student.presentClass == "thaani ibtidaahiy"
-    student.studentStatus = "current"
-  }
-  if ((student.programme == "female madrasah") && student.presentClass == "thaalith mutawasith") {
-    student.studentStatus = "current"
-  }
-  if ((student.programme == "adult madrasah") && student.presentClass == "al-awwal a-thaanawiy") {
-          student.presentClass = "thaalith idaadiy"
-          student.studentStatus = "current"
-        }
-  await student.save()
 
-  res.status(200).json({ status: "success", message: "Student has been successfully demoted" });
+  // Programme-specific demotion rules
+
+  if (
+    student.programme == "barnamij" &&
+    student.presentClass == "thaani idaadiy"
+  ) {
+    student.studentStatus = "current";
+  }
+
+  if (
+    student.programme == "barnamij" &&
+    student.presentClass == "awwal idaadiy"
+  ) {
+    student.presentClass = "thaani ibtidaahiy";
+    student.studentStatus = "current";
+  }
+
+  if (
+    student.programme == "female madrasah" &&
+    student.presentClass == "thaalith mutawasith"
+  ) {
+    student.studentStatus = "current";
+  }
+
+  if (
+    student.programme == "adult madrasah" &&
+    student.presentClass == "al-awwal a-thaanawiy"
+  ) {
+    student.presentClass = "thaalith idaadiy";
+    student.studentStatus = "current";
+  }
+
+  await student.save();
+
+  res.status(200).json({
+    status: "success",
+    message: `${student.firstName} ${student.lastName} (${student.admNo}) has been demoted to ${student.presentClass}`
+  });
 };
+
 
 const deleteStudent = async (req, res, next) => {
   let { admNo } = req.query;
